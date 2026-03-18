@@ -48,6 +48,23 @@ Every package extends `tsconfig.base.json` which sets `composite: true`. The roo
 - `pnpm run build` — runs `typecheck` first, then recursively runs `build` in all packages that define it
 - `pnpm run typecheck` — runs `tsc --build --emitDeclarationOnly` using project references
 
+## Database Schema
+
+7 tabeller, alle med UUID primærnøgler og `created_at`/`updated_at`:
+
+| Tabel | Relation | Formål |
+|---|---|---|
+| `customers` | — | Kunder med kontaktinfo |
+| `zones` | — | Områder med GeoJSON og farve |
+| `drivers` | — | Chauffører med køretøj og aktiv-flag |
+| `locations` | → customers, → zones | Specifikke pladser/adresser per kunde |
+| `assignments` | → zones, → locations, → drivers | Udkald/opgaver med type, status og prioritet |
+| `sms_log` | → assignments | Log over afsendte SMS-beskeder |
+| `gps_positions` | → drivers | Live GPS-positioner per chauffør |
+
+**Status-enum (assignments):** afventer, igangsat, afsluttet, annulleret  
+**Type-enum (assignments):** snerydning, saltning, fejning, grusning, andet
+
 ## Packages
 
 ### `artifacts/api-server` (`@workspace/api-server`)
