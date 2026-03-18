@@ -10,7 +10,8 @@ import {
   X,
   Bell,
   Search,
-  Settings
+  Settings,
+  MapPinned,
 } from "lucide-react";
 import { clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
@@ -26,6 +27,7 @@ const navItems = [
 ];
 
 const secondaryNavItems = [
+  { href: "/pladser", label: "Pladser", icon: MapPinned },
   { href: "/kunder", label: "Kunder", icon: Briefcase },
   { href: "/chaufforer", label: "Chauffører", icon: Users },
 ];
@@ -77,7 +79,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             </h4>
             <nav className="space-y-1">
               {secondaryNavItems.map((item) => {
-                const isActive = location === item.href;
+                const isActive = location === item.href || location.startsWith(item.href + "/");
                 return (
                   <Link 
                     key={item.href} 

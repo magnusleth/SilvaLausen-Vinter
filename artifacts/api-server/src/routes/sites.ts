@@ -66,7 +66,9 @@ router.get("/sites/admin", async (req, res): Promise<void> => {
       (s.address ?? "").toLowerCase().includes(q) ||
       (s.city ?? "").toLowerCase().includes(q) ||
       (s.postalCode ?? "").toLowerCase().includes(q) ||
-      (s.codeKey ?? "").toLowerCase().includes(q)
+      (s.codeKey ?? "").toLowerCase().includes(q) ||
+      (s.kunde ?? "").toLowerCase().includes(q) ||
+      (s.vaKunde ?? "").toLowerCase().includes(q)
     );
   }
 
@@ -260,7 +262,7 @@ router.patch("/sites/:id", async (req, res): Promise<void> => {
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const body = req.body as Record<string, unknown>;
 
-  const allowed = ["name", "address", "postalCode", "city", "level", "dayRule", "active", "notes", "codeKey", "iceControl", "app", "bigCustomer"] as const;
+  const allowed = ["name", "address", "postalCode", "city", "level", "dayRule", "active", "notes", "codeKey", "iceControl", "app", "bigCustomer", "vaKunde", "kunde"] as const;
   const updates: Record<string, unknown> = {};
   for (const field of allowed) {
     if (field in body) updates[field] = body[field];

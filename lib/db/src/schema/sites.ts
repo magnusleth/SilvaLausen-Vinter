@@ -39,6 +39,8 @@ export const sitesTable = pgTable("sites", {
   app: text("app"),
   bigCustomer: text("big_customer"),
   smapsId: text("smaps_id"),
+  vaKunde: text("va_kunde"),
+  kunde: text("kunde"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

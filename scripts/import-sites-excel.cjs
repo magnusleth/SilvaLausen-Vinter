@@ -63,6 +63,7 @@ async function main() {
 
   const COL = {
     status: 0, niveau: 1, dage: 2, vejr: 3, naam: 4,
+    vaKunde: 5, kunde: 6,
     storkunde: 7, kortOmr: 9, scribbelNr: 10,
     adresse: 11, postnr: 12, by: 13,
     kode: 41, app: 44, stroe: 45,
@@ -95,6 +96,12 @@ async function main() {
     const appVal = app && app !== '0' ? app : null;
     const stroe = String(row[COL.stroe] || '').trim();
     const stroeVal = stroe && stroe !== '0' ? stroe : null;
+    const vaKunde = row[COL.vaKunde] ? String(row[COL.vaKunde]).trim() : null;
+    const vaKundeVal = vaKunde && vaKunde !== '0' ? vaKunde : null;
+    const kundeStr = String(row[COL.kunde] || '').trim();
+    const kundeVal = kundeStr && kundeStr !== '0' ? kundeStr : null;
+    const scribbelNr = row[COL.scribbelNr] ? String(row[COL.scribbelNr]).trim() : null;
+    const smapsIdVal = scribbelNr && scribbelNr !== '0' ? scribbelNr : null;
 
     // Resolve area
     const vejr = String(row[COL.vejr] || '').trim();
@@ -125,17 +132,20 @@ async function main() {
           level=$4, day_rule=$5, active=$6,
           code_key=COALESCE($7,code_key), ice_control=COALESCE($8,ice_control),
           app=COALESCE($9,app), big_customer=COALESCE($10,big_customer),
-          area_id=COALESCE($11,area_id), updated_at=NOW()
+          area_id=COALESCE($11,area_id),
+          va_kunde=COALESCE($13,va_kunde), kunde=COALESCE($14,kunde),
+          smaps_id=COALESCE($15,smaps_id),
+          updated_at=NOW()
          WHERE id=$12`,
-        [adresse, postnr, by, niveau, dage, active, kodeVal, stroeVal, appVal, storkundeVal, areaId, existId]
+        [adresse, postnr, by, niveau, dage, active, kodeVal, stroeVal, appVal, storkundeVal, areaId, existId, vaKundeVal, kundeVal, smapsIdVal]
       );
       siteId = existId;
       upd++;
     } else {
       const { rows: [r] } = await pool.query(
-        `INSERT INTO sites(id,area_id,name,address,postal_code,city,level,day_rule,active,code_key,ice_control,app,big_customer,created_at,updated_at)
-         VALUES(gen_random_uuid(),$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW(),NOW()) RETURNING id`,
-        [areaId, naam, adresse, postnr, by, niveau, dage, active, kodeVal, stroeVal, appVal, storkundeVal]
+        `INSERT INTO sites(id,area_id,name,address,postal_code,city,level,day_rule,active,code_key,ice_control,app,big_customer,va_kunde,kunde,smaps_id,created_at,updated_at)
+         VALUES(gen_random_uuid(),$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,NOW(),NOW()) RETURNING id`,
+        [areaId, naam, adresse, postnr, by, niveau, dage, active, kodeVal, stroeVal, appVal, storkundeVal, vaKundeVal, kundeVal, smapsIdVal]
       );
       siteId = r.id;
       byName.set(naam.toLowerCase(), siteId);

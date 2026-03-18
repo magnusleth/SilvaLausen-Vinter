@@ -117,8 +117,12 @@ Every package extends `tsconfig.base.json` which sets `composite: true`. The roo
 - `GET /api/callouts/:id/live` — chaufførvisning: udkald + alle snapshot-pladser med koordinater (id, name, level, address, lat, lng)
 - `POST /api/callouts` — opret udkald med area-statuses og plads-snapshot
 - `GET /api/sites/map` — site markers med koordinater (filter: areaId, level)
-- `GET /api/sites/geometries` — GeoJSON FeatureCollection med site-geometrier
+- `GET /api/sites/geometries` — GeoJSON FeatureCollection med site-geometrier (kun draft=false + aktive sites)
 - `POST /api/sites/callout-preview` — forhåndsberegn pladser givet `{assignments: [{areaId, color}]}`
+- `GET /api/sites/admin` — alle sites med areaName, hasMarker, geometryCount (ingen aktiv-filter)
+- `GET /api/sites/:id` — site-detalje med markers, geometryCount, areaName
+- `PATCH /api/sites/:id` — opdater site-felter (incl. aktiv-toggle, va_kunde, kunde)
+- `POST /api/sites/:id/geocode` — DAWA-geokodning af adresse → siteMarkersTable
 
 ### Frontend sider
 - `/dashboard` — overblik
@@ -126,6 +130,28 @@ Every package extends `tsconfig.base.json` which sets `composite: true`. The roo
 - `/udkald/nyt` — opret nyt udkald
 - `/udkald/:id` — udkald-detalje (disponent, shareable)
 - `/live/:calloutId` — **chaufførvisning** (no auth, no nav, mobile-first, Mapbox clustering, Google Maps navigation)
+- `/pladser` — **plads-administrationstabel** (source of truth: Pladser-arket i Excel); alle 885 pladser; search, niveau/område/aktiv-filter; sortérbar; aktiv-toggle inline
+- `/pladser/:id` — plads-detailside med stamdata, kundeinfo, drift & udkald, geodata, mini-Mapbox-kort
+- `/pladser/:id/rediger` — redigering af plads inkl. DAWA-geokodning
+
+### sites-tabel kolonner (fra Excel Pladser-arket)
+| Excel col | Header | DB-felt |
+|---|---|---|
+| 0 | Status | active |
+| 1 | Niveau | level (vip/hoj/lav/basis) |
+| 2 | KunHverdage | day_rule |
+| 3 | Vejrområde | area_id |
+| 4 | PladsNavn | name |
+| 5 | VaNrKunde | va_kunde |
+| 6 | Kunde | kunde |
+| 7 | Storkunde | big_customer |
+| 10 | ScribbelNr | smaps_id |
+| 11 | Adresse | address |
+| 12 | Postnr | postal_code |
+| 13 | By | city |
+| 41 | KodeNøgle | code_key |
+| 44 | App | app |
+| 45 | Strømiddel | ice_control |
 
 ### Vigtige designbeslutninger
 - `callout_sites` er et snapshot — ændringer i `sites` tabel efter oprettelse ændrer ikke udkald

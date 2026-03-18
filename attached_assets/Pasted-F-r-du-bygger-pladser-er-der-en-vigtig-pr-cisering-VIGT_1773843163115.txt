@@ -1,0 +1,56 @@
+Før du bygger /pladser, er der en vigtig præcisering:
+
+VIGTIGT:
+Siden /pladser skal bygges ud fra Excel-filen UDKALDSARK 2025 2026, specifikt arket der hedder "Pladser".
+
+Arket "Pladser" er hovedarket og source of truth for plads-stamdata.
+
+Det betyder:
+- /pladser må ikke bare vise tilfældige felter fra sites-tabellen
+- /pladser skal afspejle de centrale kolonner fra arket "Pladser"
+- hvis nogle felter fra "Pladser" endnu ikke findes korrekt i databasen, skal du først identificere dem og forklare hvad der mangler
+
+Før du bygger siden, skal du derfor gøre dette:
+
+1. Genanalysér Excel-filen UDKALDSARK 2025 2026
+- find arket "Pladser"
+- identificér præcist hvilke kolonner der er de centrale stamdatafelter
+- vis mapping mellem kolonnerne i "Pladser" og felterne i databasen/sites
+
+2. Bekræft at /pladser skal bruge disse datafelter fra hovedarket "Pladser"
+mindst:
+- Pladsnavn
+- Adresse
+- Postnr
+- By
+- Niveau
+- KodeNøgle
+- Strømiddel
+- App
+- Storkunde
+- Dage
+- Område / kortområde / vejrområde hvis det findes
+- Aktiv/inaktiv
+- evt. kunde/kundenr hvis det findes i arket
+
+3. Hvis nogle af disse felter endnu ikke er korrekt importeret fra arket "Pladser", så:
+- forklar hvilke felter der mangler
+- opdater import/mapping så sites-tabellen og relaterede felter afspejler hovedarket korrekt
+
+4. Byg derefter /pladser som hovedadministration
+Den skal være en rigtig administrationsside for hovedarket "Pladser" og vise de vigtigste kolonner fra dette ark.
+
+5. Byg /pladser/:id og /pladser/:id/rediger ud fra samme source of truth
+
+VIGTIGT:
+- Arket "Pladser" i UDKALDSARK 2025 2026 er source of truth
+- /pladser skal afspejle dette ark
+- Prikker/markører kommer stadig kun fra aktive pladser og deres adresser
+- Geometri håndteres stadig separat
+- Callout-logikken må ikke ændres
+
+Når du er færdig med analysen før implementering, så lever:
+A. Hvilke kolonner fra arket "Pladser" du bruger
+B. Hvordan de mappes til databasen
+C. Hvilke felter der stadig mangler eller kræver justering
+D. Først derefter må du bygge /pladser

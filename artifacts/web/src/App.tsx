@@ -15,6 +15,9 @@ import UdkaldVisPage from "@/pages/udkald-vis";
 import KunderPage from "@/pages/kunder";
 import ChauffororPage from "@/pages/chaufforer";
 import LivePage from "@/pages/live";
+import PladserPage from "@/pages/pladser";
+import PladsVisPage from "@/pages/plads-vis";
+import PladsRedigerPage from "@/pages/plads-rediger";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -51,6 +54,9 @@ function Router() {
             <Route path="/udkald/:id" component={UdkaldVisPage} />
             <Route path="/kunder" component={KunderPage} />
             <Route path="/chaufforer" component={ChauffororPage} />
+            <Route path="/pladser/:id/rediger" component={PladsRedigerPage} />
+            <Route path="/pladser/:id" component={PladsVisPage} />
+            <Route path="/pladser" component={PladserPage} />
             <Route component={NotFound} />
           </Switch>
         </AppLayout>
