@@ -1,0 +1,106 @@
+Godt. Områderne fungerer nu korrekt med rigtige polygoner og udkald kan gemmes.
+
+Nu går vi til fase 2:
+Import af pladser og beregning af hvilke pladser et udkald indeholder.
+
+Jeg vedhæfter nu disse filer:
+- FhGXF1RVtY - Pladser.csv
+- FhGXF1RVtY - List29_10-2025.csv
+- Pladser SilkeborgRanders.geojson
+
+VIGTIGT:
+Fokusér kun på pladser, kort og udkaldsberegning.
+Byg ikke nye sider.
+Byg ikke SMS.
+Byg ikke chaufførmobil.
+Rør ikke eksisterende udkaldsflow.
+Brug eksisterende datamodel (sites, site_markers, site_geometries).
+
+---
+
+OPGAVE:
+
+1. Analysér filerne
+- Identificér felter for:
+  - pladsnavn
+  - niveau (vip / hoj / lav / basis)
+  - område
+  - kunde
+  - status (aktiv/inaktiv)
+  - koordinater
+  - geometri (polygon/linje hvis findes)
+- Forklar tydeligt mapping før du implementerer
+
+---
+
+2. Importér pladser til databasen
+- Opret/mapp til:
+  - sites (kerne-data)
+  - site_markers (lat/lng)
+  - site_geometries (GeoJSON hvis findes)
+- Brug UUID og relationer til areas hvor muligt
+
+---
+
+3. Kobl pladser til områder
+- Hvis område findes i data → brug det direkte
+- Hvis ikke:
+  - lav en midlertidig mapping-strategi
+  - forklar hvordan den virker
+- Forbered evt. spatial kobling (point-in-polygon), men gør det simpelt i første version
+
+---
+
+4. Opdater kortet (/kort)
+- Vis site_markers som punkter
+- Vis site_geometries hvis de findes
+- Behold areas som polygoner
+- Gør filterpanelet datadrevet:
+  - niveau
+  - område
+  - status
+
+---
+
+5. Byg preview-beregning i /udkald/nyt
+
+Når et område får en farve, beregn hvilke pladser der er inkluderet:
+
+- grå = ingen
+- orange = vip
+- blå = vip + hoj
+- rød = vip + hoj + lav
+- grøn = vip + hoj + lav + basis
+
+Brug:
+- site.area_id
+- site.level
+- site.status (kun aktive)
+- evt. day_rule hvis det findes
+
+---
+
+6. Vis resultat i UI
+
+På /udkald/nyt:
+- vis antal pladser pr. område
+- vis samlet antal pladser
+- vis evt. preview-liste (første 10 pladser)
+
+---
+
+VIGTIGT:
+- Gem IKKE callout_sites endnu
+- Dette er kun preview/logik
+- Ingen mock data — brug kun rigtige data
+- Rør ikke callout-tabeller
+
+---
+
+Når du er færdig:
+
+A. Forklar hvordan de 3 filer blev mappet til databasen  
+B. Forklar hvordan pladser kobles til områder  
+C. Forklar hvordan beregningen virker  
+D. Angiv hvor mange pladser der er importeret i alt  
+E. Angiv hvad der stadig er usikkert eller kræver afklaring

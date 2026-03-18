@@ -6,7 +6,7 @@ import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Siren, Info, Send, Map as MapIcon, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, Siren, Info, Send, Map as MapIcon, CheckCircle2, ChevronDown, ChevronUp } from "lucide-react";
 import { clsx } from "clsx";
 import { useToast } from "@/hooks/use-toast";
 
@@ -56,6 +56,7 @@ export default function NytUdkaldPage() {
   const [areaColors, setAreaColors] = useState<Record<string, ColorId>>({});
   const [popup, setPopup] = useState<AreaPopup | null>(null);
   const [saving, setSaving] = useState(false);
+  const [previewExpanded, setPreviewExpanded] = useState(false);
 
   const { data: areas = [], isLoading } = useQuery<AreaWithGeo[]>({
     queryKey: ["areas-with-geometry"],
@@ -64,6 +65,33 @@ export default function NytUdkaldPage() {
       if (!res.ok) throw new Error("Kunne ikke hente områder");
       return res.json();
     },
+  });
+
+  // Preview: compute which sites are included based on current area→color assignments
+  const activeAssignments = useMemo(
+    () =>
+      Object.entries(areaColors)
+        .filter(([, color]) => color !== "grå")
+        .map(([areaId, color]) => ({ areaId, color })),
+    [areaColors]
+  );
+
+  const { data: preview } = useQuery<{
+    totalSites: number;
+    byArea: Record<string, { count: number; sites: { name: string; level: string; address?: string | null }[] }>;
+  }>({
+    queryKey: ["callout-preview", activeAssignments],
+    queryFn: async () => {
+      if (activeAssignments.length === 0) return { totalSites: 0, byArea: {} };
+      const res = await fetch(`${BASE}/api/sites/callout-preview`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assignments: activeAssignments }),
+      });
+      if (!res.ok) throw new Error("Preview fejl");
+      return res.json();
+    },
+    enabled: activeAssignments.length > 0,
   });
 
   const handleSelectColor = (areaId: string, color: ColorId) => {
@@ -282,6 +310,68 @@ export default function NytUdkaldPage() {
               </div>
             )}
           </div>
+
+          {/* Preview section — shown when any area is activated */}
+          {activeAssignments.length > 0 && (
+            <div className="space-y-1.5 border-t border-border px-4 pt-4 pb-3">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-foreground uppercase tracking-wide">
+                  Pladser i udkald
+                </label>
+                {preview && (
+                  <Badge variant="secondary" className="text-xs">
+                    {preview.totalSites} i alt
+                  </Badge>
+                )}
+              </div>
+
+              {!preview ? (
+                <p className="text-xs text-muted-foreground italic">Beregner...</p>
+              ) : preview.totalSites === 0 ? (
+                <p className="text-xs text-muted-foreground italic">Ingen aktive pladser i valgte områder.</p>
+              ) : (
+                <div className="space-y-2">
+                  {/* Per-area counts */}
+                  {activeAssignments.map(({ areaId, color }) => {
+                    const areaData = preview.byArea[areaId];
+                    const areaName = areas.find(a => a.id === areaId)?.name ?? areaId;
+                    if (!areaData) return null;
+                    return (
+                      <div key={areaId} className="bg-muted/40 rounded-lg px-3 py-2">
+                        <div className="flex items-center justify-between mb-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: colorHex(color) }} />
+                            <span className="text-xs font-medium truncate">{areaName}</span>
+                          </div>
+                          <span className="text-xs font-bold text-foreground ml-2">{areaData.count}</span>
+                        </div>
+                        {/* First few site names */}
+                        {areaData.sites.slice(0, previewExpanded ? 10 : 3).map((site, i) => (
+                          <p key={i} className="text-[10px] text-muted-foreground pl-4 truncate leading-relaxed">
+                            {site.name}
+                          </p>
+                        ))}
+                        {!previewExpanded && areaData.count > 3 && (
+                          <p className="text-[10px] text-muted-foreground pl-4 italic">
+                            + {areaData.count - 3} flere...
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {/* Expand/collapse */}
+                  <button
+                    onClick={() => setPreviewExpanded(!previewExpanded)}
+                    className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
+                  >
+                    {previewExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                    {previewExpanded ? "Vis færre" : "Vis alle pladser"}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Color legend */}
           <div className="p-4 border-t border-border bg-slate-900 dark:bg-slate-950 shrink-0">
