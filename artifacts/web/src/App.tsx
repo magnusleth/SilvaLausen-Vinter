@@ -11,6 +11,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import Dashboard from "@/pages/dashboard";
 import KortPage from "@/pages/kort";
 import NytUdkaldPage from "@/pages/udkald-nyt";
+import UdkaldVisPage from "@/pages/udkald-vis";
 import KunderPage from "@/pages/kunder";
 import ChauffororPage from "@/pages/chaufforer";
 import NotFound from "@/pages/not-found";
@@ -40,6 +41,7 @@ function Router() {
         <Route path="/dashboard" component={Dashboard} />
         <Route path="/kort" component={KortPage} />
         <Route path="/udkald/nyt" component={NytUdkaldPage} />
+        <Route path="/udkald/:id" component={UdkaldVisPage} />
         <Route path="/kunder" component={KunderPage} />
         <Route path="/chaufforer" component={ChauffororPage} />
         <Route component={NotFound} />

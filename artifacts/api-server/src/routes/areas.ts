@@ -7,7 +7,7 @@ import {
   CreateAreaBody,
   ListAreasQueryParams,
 } from "@workspace/api-zod";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 
 const router: IRouter = Router();
 
@@ -23,6 +23,41 @@ router.get("/areas", async (req, res): Promise<void> => {
     )
     .orderBy(areasTable.name);
   res.json(ListAreasResponse.parse(rows));
+});
+
+// Returns all active areas with their first geometry — used for map rendering
+router.get("/areas-with-geometry", async (req, res): Promise<void> => {
+  const areas = await db
+    .select()
+    .from(areasTable)
+    .where(eq(areasTable.active, true))
+    .orderBy(areasTable.name);
+
+  if (areas.length === 0) {
+    res.json([]);
+    return;
+  }
+
+  const areaIds = areas.map(a => a.id);
+  const geometries = await db
+    .select()
+    .from(areaGeometriesTable)
+    .where(inArray(areaGeometriesTable.areaId, areaIds));
+
+  // Group geometries by area_id (take first)
+  const geoByArea: Record<string, unknown> = {};
+  for (const geo of geometries) {
+    if (!geoByArea[geo.areaId]) {
+      geoByArea[geo.areaId] = geo.geojson;
+    }
+  }
+
+  const result = areas.map(area => ({
+    ...area,
+    geometry: geoByArea[area.id] ?? null,
+  }));
+
+  res.json(result);
 });
 
 router.post("/areas", async (req, res): Promise<void> => {

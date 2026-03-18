@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
-import { db, calloutsTable, calloutAreaStatusesTable } from "@workspace/db";
+import { db, calloutsTable, calloutAreaStatusesTable, areasTable, areaGeometriesTable } from "@workspace/db";
+import { inArray } from "drizzle-orm";
 import {
   ListCalloutsResponse,
   ListCalloutsQueryParams,
@@ -35,11 +36,34 @@ router.post("/callouts", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
+
   const [callout] = await db
     .insert(calloutsTable)
     .values({ ...parsed.data, status: "kladde" })
     .returning();
-  res.status(201).json(callout);
+
+  // Optionally accept areaStatuses: Array<{areaId: string, color: string}>
+  const areaStatuses = req.body.areaStatuses;
+  if (Array.isArray(areaStatuses) && areaStatuses.length > 0) {
+    const rows = areaStatuses
+      .filter((s: { areaId?: string; color?: string }) => s.areaId && s.color)
+      .map((s: { areaId: string; color: string }) => ({
+        calloutId: callout.id,
+        areaId: s.areaId,
+        color: s.color,
+      }));
+    if (rows.length > 0) {
+      await db.insert(calloutAreaStatusesTable).values(rows);
+    }
+  }
+
+  // Return full callout detail with area statuses
+  const savedStatuses = await db
+    .select()
+    .from(calloutAreaStatusesTable)
+    .where(eq(calloutAreaStatusesTable.calloutId, callout.id));
+
+  res.status(201).json({ ...callout, areaStatuses: savedStatuses });
 });
 
 router.get("/callouts/:id", async (req, res): Promise<void> => {
@@ -67,6 +91,58 @@ router.get("/callouts/:id", async (req, res): Promise<void> => {
     .where(eq(calloutAreaStatusesTable.calloutId, raw));
 
   res.json(GetCalloutResponse.parse({ ...callout, areaStatuses }));
+});
+
+// Rich map view endpoint — callout + area statuses + area names + geometries
+router.get("/callouts/:id/map", async (req, res): Promise<void> => {
+  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+  const [callout] = await db
+    .select()
+    .from(calloutsTable)
+    .where(eq(calloutsTable.id, raw));
+
+  if (!callout) {
+    res.status(404).json({ error: "Udkald ikke fundet" });
+    return;
+  }
+
+  const areaStatuses = await db
+    .select()
+    .from(calloutAreaStatusesTable)
+    .where(eq(calloutAreaStatusesTable.calloutId, raw));
+
+  let areasWithGeo: Array<{ id: string; name: string; color: string; geometry: unknown }> = [];
+
+  if (areaStatuses.length > 0) {
+    const areaIds = areaStatuses.map(s => s.areaId);
+    const areas = await db
+      .select()
+      .from(areasTable)
+      .where(inArray(areasTable.id, areaIds));
+
+    const geometries = await db
+      .select()
+      .from(areaGeometriesTable)
+      .where(inArray(areaGeometriesTable.areaId, areaIds));
+
+    const geoByArea: Record<string, unknown> = {};
+    for (const geo of geometries) {
+      if (!geoByArea[geo.areaId]) geoByArea[geo.areaId] = geo.geojson;
+    }
+
+    const areaMap: Record<string, { name: string }> = {};
+    for (const a of areas) areaMap[a.id] = { name: a.name };
+
+    areasWithGeo = areaStatuses.map(s => ({
+      id: s.areaId,
+      name: areaMap[s.areaId]?.name ?? "Ukendt",
+      color: s.color,
+      geometry: geoByArea[s.areaId] ?? null,
+    }));
+  }
+
+  res.json({ ...callout, areas: areasWithGeo });
 });
 
 router.patch("/callouts/:id", async (req, res): Promise<void> => {

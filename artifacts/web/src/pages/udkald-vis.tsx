@@ -1,0 +1,376 @@
+import React, { useMemo, useState } from "react";
+import Map, { Source, Layer, Popup, NavigationControl } from "react-map-gl/mapbox";
+import type { FillLayer, LineLayer } from "react-map-gl/mapbox";
+import "mapbox-gl/dist/mapbox-gl.css";
+import { useQuery } from "@tanstack/react-query";
+import { useParams, useLocation } from "wouter";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Siren,
+  MapPin,
+  Calendar,
+  ArrowLeft,
+  Copy,
+  CheckCheck,
+  Info,
+  Map as MapIcon,
+} from "lucide-react";
+import { clsx } from "clsx";
+import { format } from "date-fns";
+import { da } from "date-fns/locale";
+
+const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
+const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
+
+const COLOR_DEF = [
+  { id: "grå",    label: "Ingen",           hex: "#94a3b8", activates: "Ingen kørsel" },
+  { id: "orange", label: "Kun VIP",         hex: "#f97316", activates: "VIP" },
+  { id: "blå",    label: "HØJ + VIP",       hex: "#3b82f6", activates: "VIP, Høj" },
+  { id: "rød",    label: "LAV + HØJ + VIP", hex: "#ef4444", activates: "VIP, Høj, Lav" },
+  { id: "grøn",   label: "Alle pladser",    hex: "#22c55e", activates: "VIP, Høj, Lav, Basis" },
+] as const;
+
+function colorHex(c: string) {
+  return COLOR_DEF.find(d => d.id === c)?.hex ?? "#94a3b8";
+}
+
+function colorLabel(c: string) {
+  return COLOR_DEF.find(d => d.id === c)?.label ?? c;
+}
+
+interface CalloutArea {
+  id: string;
+  name: string;
+  color: string;
+  geometry: GeoJSON.Feature<GeoJSON.Polygon> | null;
+}
+
+interface CalloutMapData {
+  id: string;
+  title: string;
+  status: string;
+  notes?: string | null;
+  createdAt: string;
+  startedAt?: string | null;
+  areas: CalloutArea[];
+}
+
+function computeCentroid(coords: number[][]): [number, number] {
+  const lng = coords.reduce((s, c) => s + c[0], 0) / coords.length;
+  const lat = coords.reduce((s, c) => s + c[1], 0) / coords.length;
+  return [lng, lat];
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  kladde: "Kladde",
+  aktiv: "Aktiv",
+  afsluttet: "Afsluttet",
+  annulleret: "Annulleret",
+};
+
+const STATUS_COLORS: Record<string, string> = {
+  kladde: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300",
+  aktiv: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
+  afsluttet: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400",
+  annulleret: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
+};
+
+export default function UdkaldVisPage() {
+  const params = useParams<{ id: string }>();
+  const [, setLocation] = useLocation();
+  const [copied, setCopied] = useState(false);
+
+  const { data, isLoading, error } = useQuery<CalloutMapData>({
+    queryKey: ["callout-map", params.id],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}/api/callouts/${params.id}/map`);
+      if (!res.ok) throw new Error("Udkald ikke fundet");
+      return res.json();
+    },
+    enabled: !!params.id,
+  });
+
+  const geojson = useMemo((): GeoJSON.FeatureCollection => {
+    if (!data) return { type: "FeatureCollection", features: [] };
+    const features: GeoJSON.Feature[] = [];
+    for (const area of data.areas) {
+      if (!area.geometry) continue;
+      features.push({
+        type: "Feature",
+        properties: {
+          id: area.id,
+          name: area.name,
+          color: colorHex(area.color),
+        },
+        geometry: area.geometry.geometry,
+      });
+    }
+    return { type: "FeatureCollection", features };
+  }, [data]);
+
+  const fillLayer: FillLayer = {
+    id: "areas-fill",
+    type: "fill",
+    source: "areas",
+    paint: {
+      "fill-color": ["get", "color"],
+      "fill-opacity": 0.4,
+    },
+  };
+
+  const outlineLayer: LineLayer = {
+    id: "areas-outline",
+    type: "line",
+    source: "areas",
+    paint: {
+      "line-color": ["get", "color"],
+      "line-width": 2,
+      "line-opacity": 0.9,
+    },
+  };
+
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(window.location.href);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  if (isLoading) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full" />
+      </div>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <div className="text-center space-y-3">
+          <p className="text-lg font-semibold text-foreground">Udkald ikke fundet</p>
+          <p className="text-sm text-muted-foreground">
+            Udkaldet eksisterer ikke eller er blevet slettet.
+          </p>
+          <Button variant="outline" size="sm" onClick={() => setLocation("/dashboard")}>
+            Til Dashboard
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  const activeAreas = data.areas.filter(a => a.color !== "grå");
+  const statusLabel = STATUS_LABELS[data.status] ?? data.status;
+  const statusClass = STATUS_COLORS[data.status] ?? "bg-muted text-muted-foreground";
+
+  return (
+    <div className="h-full flex flex-col overflow-hidden bg-background">
+      {/* Header */}
+      <div className="bg-card border-b border-border px-5 py-3 flex items-start justify-between shrink-0 shadow-sm z-20">
+        <div className="flex items-start gap-3">
+          <button
+            onClick={() => setLocation("/dashboard")}
+            className="p-2 hover:bg-muted rounded-full transition-colors mt-0.5 shrink-0"
+          >
+            <ArrowLeft className="w-4 h-4 text-muted-foreground" />
+          </button>
+          <div className="w-9 h-9 rounded-xl bg-red-100 dark:bg-red-900/30 flex items-center justify-center text-red-600 shrink-0 mt-0.5">
+            <Siren className="w-4.5 h-4.5" />
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-lg font-display font-bold leading-tight truncate">
+                {data.title}
+              </h1>
+              <span className={clsx("text-xs font-semibold px-2 py-0.5 rounded-full", statusClass)}>
+                {statusLabel}
+              </span>
+            </div>
+            <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground flex-wrap">
+              <span className="flex items-center gap-1">
+                <Calendar className="w-3 h-3" />
+                {format(new Date(data.createdAt), "d. MMM yyyy HH:mm", { locale: da })}
+              </span>
+              <span className="flex items-center gap-1">
+                <MapPin className="w-3 h-3" />
+                {activeAreas.length} {activeAreas.length === 1 ? "område" : "områder"} aktiveret
+              </span>
+            </div>
+            {data.notes && (
+              <p className="text-xs text-muted-foreground mt-1 italic max-w-xl">{data.notes}</p>
+            )}
+          </div>
+        </div>
+
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleCopyLink}
+          className="shrink-0 gap-1.5 ml-4"
+        >
+          {copied ? (
+            <>
+              <CheckCheck className="w-3.5 h-3.5 text-green-600" />
+              Kopieret!
+            </>
+          ) : (
+            <>
+              <Copy className="w-3.5 h-3.5" />
+              Kopier link
+            </>
+          )}
+        </Button>
+      </div>
+
+      {/* Body: Sidebar + Map */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Left sidebar — area list */}
+        <div className="w-64 shrink-0 bg-card border-r border-border flex flex-col overflow-y-auto z-10">
+          <div className="p-4 space-y-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                Aktive Områder
+              </p>
+              {activeAreas.length === 0 ? (
+                <p className="text-xs text-muted-foreground italic">Ingen områder aktiveret</p>
+              ) : (
+                <div className="space-y-1">
+                  {activeAreas.map(area => (
+                    <div
+                      key={area.id}
+                      className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-muted/50"
+                    >
+                      <span
+                        className="w-3 h-3 rounded-full shrink-0 border border-white/20 shadow-sm"
+                        style={{ backgroundColor: colorHex(area.color) }}
+                      />
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium truncate">{area.name}</p>
+                        <p className="text-[10px] text-muted-foreground">{colorLabel(area.color)}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {data.areas.length > activeAreas.length && (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                  Inaktive Områder
+                </p>
+                <div className="space-y-0.5">
+                  {data.areas
+                    .filter(a => a.color === "grå")
+                    .map(area => (
+                      <div key={area.id} className="flex items-center gap-2.5 px-3 py-1.5">
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0 bg-slate-300 dark:bg-slate-600" />
+                        <p className="text-xs text-muted-foreground truncate">{area.name}</p>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Color legend */}
+          <div className="mt-auto p-4 border-t border-border bg-slate-900 dark:bg-slate-950">
+            <div className="flex items-center gap-2 mb-3">
+              <Info className="w-3.5 h-3.5 text-slate-400" />
+              <span className="text-[10px] font-semibold text-slate-300 uppercase tracking-wide">
+                Farveforklaring
+              </span>
+            </div>
+            <div className="space-y-1.5">
+              {COLOR_DEF.filter(c => c.id !== "grå").map(c => (
+                <div key={c.id} className="flex items-center gap-2 text-xs">
+                  <span
+                    className="w-2.5 h-2.5 rounded-full shrink-0"
+                    style={{ backgroundColor: c.hex }}
+                  />
+                  <span className="text-slate-300 font-medium text-[11px]">{c.label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Map */}
+        <div className="flex-1 relative">
+          {!MAPBOX_TOKEN ? (
+            <NoMapFallback areas={data.areas} />
+          ) : (
+            <Map
+              initialViewState={{ longitude: 9.5, latitude: 56.3, zoom: 7 }}
+              mapStyle="mapbox://styles/mapbox/light-v11"
+              mapboxAccessToken={MAPBOX_TOKEN}
+              style={{ width: "100%", height: "100%" }}
+            >
+              <NavigationControl position="bottom-right" />
+
+              <Source id="areas" type="geojson" data={geojson}>
+                <Layer {...fillLayer} />
+                <Layer {...outlineLayer} />
+              </Source>
+
+              {/* Area name labels */}
+              {data.areas.map(area => {
+                if (!area.geometry) return null;
+                const coords = area.geometry.geometry.coordinates[0];
+                const [lng, lat] = computeCentroid(coords);
+                const isActive = area.color !== "grå";
+                return (
+                  <Popup
+                    key={area.id + "-label"}
+                    longitude={lng}
+                    latitude={lat}
+                    closeButton={false}
+                    closeOnClick={false}
+                    anchor="center"
+                    offset={0}
+                  >
+                    <div
+                      className={clsx(
+                        "px-2 py-0.5 rounded text-xs font-semibold pointer-events-none select-none whitespace-nowrap shadow",
+                        isActive ? "text-white" : "text-slate-500 bg-white/70 opacity-60"
+                      )}
+                      style={isActive ? { backgroundColor: colorHex(area.color) } : {}}
+                    >
+                      {area.name}
+                    </div>
+                  </Popup>
+                );
+              })}
+            </Map>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NoMapFallback({ areas }: { areas: CalloutArea[] }) {
+  const activeAreas = areas.filter(a => a.color !== "grå");
+  return (
+    <div className="w-full h-full flex items-center justify-center bg-slate-100 dark:bg-slate-900">
+      <div className="text-center space-y-4 p-8">
+        <MapIcon className="w-10 h-10 text-muted-foreground mx-auto" />
+        <p className="text-sm text-muted-foreground">
+          Tilføj <code className="bg-muted px-1 rounded">VITE_MAPBOX_TOKEN</code> for at se kortet.
+        </p>
+        <div className="grid grid-cols-2 gap-2 max-w-xs text-left">
+          {activeAreas.map(area => (
+            <div key={area.id} className="flex items-center gap-2 text-xs">
+              <span
+                className="w-3 h-3 rounded-full shrink-0"
+                style={{ backgroundColor: colorHex(area.color) }}
+              />
+              <span className="font-medium">{area.name}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
