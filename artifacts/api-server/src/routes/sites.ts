@@ -65,7 +65,7 @@ router.get("/sites/map", async (req, res): Promise<void> => {
   res.json(result);
 });
 
-// Site geometries as GeoJSON FeatureCollection — for map overlay
+// Site geometries as GeoJSON FeatureCollection — for map overlay, with color/type
 router.get("/sites/geometries", async (req, res): Promise<void> => {
   const { areaId, level } = req.query;
 
@@ -74,14 +74,24 @@ router.get("/sites/geometries", async (req, res): Promise<void> => {
   if (level && typeof level === "string") conditions.push(eq(sitesTable.level, level));
 
   const sites = await db
-    .select({ id: sitesTable.id, level: sitesTable.level })
+    .select({
+      id: sitesTable.id,
+      name: sitesTable.name,
+      level: sitesTable.level,
+      postalCode: sitesTable.postalCode,
+      city: sitesTable.city,
+      codeKey: sitesTable.codeKey,
+      iceControl: sitesTable.iceControl,
+      app: sitesTable.app,
+      bigCustomer: sitesTable.bigCustomer,
+    })
     .from(sitesTable)
     .where(and(...conditions));
 
   if (sites.length === 0) { res.json({ type: "FeatureCollection", features: [] }); return; }
 
   const siteIds = sites.map(s => s.id);
-  const levelBySite: Record<string, string> = Object.fromEntries(sites.map(s => [s.id, s.level]));
+  const siteMeta: Record<string, typeof sites[number]> = Object.fromEntries(sites.map(s => [s.id, s]));
 
   const geometries = await db
     .select()
@@ -89,10 +99,24 @@ router.get("/sites/geometries", async (req, res): Promise<void> => {
     .where(inArray(siteGeometriesTable.siteId, siteIds));
 
   const features = geometries.map(geo => {
-    const feature = geo.geojson as Record<string, unknown>;
+    const geojson = geo.geojson as Record<string, unknown>;
+    const meta = siteMeta[geo.siteId];
     return {
-      ...feature,
-      properties: { ...(feature.properties as object ?? {}), siteId: geo.siteId, level: levelBySite[geo.siteId] ?? "basis" },
+      type: "Feature",
+      geometry: geojson,
+      properties: {
+        siteId: geo.siteId,
+        level: meta?.level ?? "basis",
+        name: meta?.name ?? "",
+        postalCode: meta?.postalCode ?? null,
+        city: meta?.city ?? null,
+        codeKey: meta?.codeKey ?? null,
+        iceControl: meta?.iceControl ?? null,
+        app: meta?.app ?? null,
+        bigCustomer: meta?.bigCustomer ?? null,
+        geomType: geo.geomType ?? "ukendt",
+        color: geo.color ?? "#888888",
+      },
     };
   });
 

@@ -8,6 +8,7 @@ import {
   areaGeometriesTable,
   sitesTable,
   siteMarkersTable,
+  siteGeometriesTable,
 } from "@workspace/db";
 import { inArray } from "drizzle-orm";
 import {
@@ -246,6 +247,12 @@ router.get("/callouts/:id/live", async (req, res): Promise<void> => {
       name: sitesTable.name,
       level: sitesTable.level,
       address: sitesTable.address,
+      postalCode: sitesTable.postalCode,
+      city: sitesTable.city,
+      codeKey: sitesTable.codeKey,
+      iceControl: sitesTable.iceControl,
+      app: sitesTable.app,
+      bigCustomer: sitesTable.bigCustomer,
       areaId: sitesTable.areaId,
       dayRule: sitesTable.dayRule,
     })
@@ -283,6 +290,12 @@ router.get("/callouts/:id/live", async (req, res): Promise<void> => {
       name: s.name,
       level: s.level,
       address: s.address,
+      postalCode: s.postalCode,
+      city: s.city,
+      codeKey: s.codeKey,
+      iceControl: s.iceControl,
+      app: s.app,
+      bigCustomer: s.bigCustomer,
       areaId: s.areaId,
       dayRule: s.dayRule,
       lat: markerBySite[s.siteId].lat,
@@ -290,6 +303,66 @@ router.get("/callouts/:id/live", async (req, res): Promise<void> => {
     }));
 
   res.json({ ...callout, totalSites: snapshotSites.length, sites });
+});
+
+// Site geometries for a specific callout — returns GeoJSON FeatureCollection of snapshot sites
+router.get("/callouts/:id/geometries", async (req, res): Promise<void> => {
+  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+  // Find sites in this callout snapshot
+  const snapshotSiteIds = await db
+    .select({ siteId: calloutSitesTable.siteId })
+    .from(calloutSitesTable)
+    .where(and(eq(calloutSitesTable.calloutId, raw), eq(calloutSitesTable.included, true)));
+
+  if (snapshotSiteIds.length === 0) {
+    res.json({ type: "FeatureCollection", features: [] });
+    return;
+  }
+
+  const siteIds = snapshotSiteIds.map(r => r.siteId);
+
+  // Get site metadata
+  const sites = await db
+    .select({
+      id: sitesTable.id, name: sitesTable.name, level: sitesTable.level,
+      address: sitesTable.address, postalCode: sitesTable.postalCode,
+      city: sitesTable.city, codeKey: sitesTable.codeKey,
+      iceControl: sitesTable.iceControl, app: sitesTable.app, bigCustomer: sitesTable.bigCustomer,
+    })
+    .from(sitesTable)
+    .where(inArray(sitesTable.id, siteIds));
+  const siteMeta: Record<string, typeof sites[number]> = Object.fromEntries(sites.map(s => [s.id, s]));
+
+  // Get geometries
+  const geometries = await db
+    .select()
+    .from(siteGeometriesTable)
+    .where(inArray(siteGeometriesTable.siteId, siteIds));
+
+  const features = geometries.map(geo => {
+    const meta = siteMeta[geo.siteId];
+    return {
+      type: "Feature",
+      geometry: geo.geojson,
+      properties: {
+        siteId: geo.siteId,
+        level: meta?.level ?? "basis",
+        name: meta?.name ?? "",
+        address: meta?.address ?? null,
+        postalCode: meta?.postalCode ?? null,
+        city: meta?.city ?? null,
+        codeKey: meta?.codeKey ?? null,
+        iceControl: meta?.iceControl ?? null,
+        app: meta?.app ?? null,
+        bigCustomer: meta?.bigCustomer ?? null,
+        geomType: geo.geomType ?? "ukendt",
+        color: geo.color ?? "#888888",
+      },
+    };
+  });
+
+  res.json({ type: "FeatureCollection", features });
 });
 
 router.patch("/callouts/:id", async (req, res): Promise<void> => {

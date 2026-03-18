@@ -12,6 +12,9 @@ export const siteGeometriesTable = pgTable("site_geometries", {
   importId: uuid("import_id").references(() => importsTable.id, { onDelete: "set null" }),
   geojson: jsonb("geojson").notNull(),
   source: text("source").notNull().default("manuel"),
+  geomType: text("geom_type"),
+  color: text("color"),
+  smapsId: text("smaps_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

@@ -144,6 +144,16 @@ export default function UdkaldVisPage() {
     enabled: !!params.id,
   });
 
+  const { data: siteGeo } = useQuery<GeoJSON.FeatureCollection>({
+    queryKey: ["callout-geometries", params.id],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}/api/callouts/${params.id}/geometries`);
+      if (!res.ok) throw new Error("Fejl");
+      return res.json();
+    },
+    enabled: !!params.id,
+  });
+
   const geojson = useMemo((): GeoJSON.FeatureCollection => {
     if (!data) return { type: "FeatureCollection", features: [] };
     const features: GeoJSON.Feature[] = [];
@@ -162,14 +172,38 @@ export default function UdkaldVisPage() {
     id: "areas-fill",
     type: "fill",
     source: "areas",
-    paint: { "fill-color": ["get", "color"], "fill-opacity": 0.4 },
+    paint: { "fill-color": ["get", "color"], "fill-opacity": 0.25 },
   };
 
   const outlineLayer: LineLayer = {
     id: "areas-outline",
     type: "line",
     source: "areas",
-    paint: { "line-color": ["get", "color"], "line-width": 2, "line-opacity": 0.9 },
+    paint: { "line-color": ["get", "color"], "line-width": 2.5, "line-opacity": 0.95 },
+  };
+
+  const siteGeoFillLayer: FillLayer = {
+    id: "site-geo-fill",
+    type: "fill",
+    source: "site-geo",
+    filter: ["==", ["geometry-type"], "Polygon"],
+    paint: { "fill-color": ["coalesce", ["get", "color"], "#888888"], "fill-opacity": 0.4 },
+  };
+
+  const siteGeoOutlineLayer: LineLayer = {
+    id: "site-geo-outline",
+    type: "line",
+    source: "site-geo",
+    filter: ["==", ["geometry-type"], "Polygon"],
+    paint: { "line-color": ["coalesce", ["get", "color"], "#888888"], "line-width": 1.5, "line-opacity": 0.9 },
+  };
+
+  const siteGeoLineLayer: LineLayer = {
+    id: "site-geo-lines",
+    type: "line",
+    source: "site-geo",
+    filter: ["==", ["geometry-type"], "LineString"],
+    paint: { "line-color": ["coalesce", ["get", "color"], "#888888"], "line-width": 2.5, "line-opacity": 0.85 },
   };
 
   const handleCopyLink = () => {
@@ -400,12 +434,21 @@ export default function UdkaldVisPage() {
           ) : (
             <Map
               initialViewState={{ longitude: 9.5, latitude: 56.3, zoom: 7 }}
-              mapStyle="mapbox://styles/mapbox/light-v11"
+              mapStyle="mapbox://styles/mapbox/satellite-streets-v12"
               mapboxAccessToken={MAPBOX_TOKEN}
               style={{ width: "100%", height: "100%" }}
               onError={e => { console.error("[VinterDrift/udkald-vis] Map error:", e.error); setMapError(e.error?.message ?? "Kortfejl"); }}
             >
               <NavigationControl position="bottom-right" />
+
+              {/* Site geometries with color-coded types */}
+              {siteGeo && (
+                <Source id="site-geo" type="geojson" data={siteGeo}>
+                  <Layer {...siteGeoFillLayer} />
+                  <Layer {...siteGeoOutlineLayer} />
+                  <Layer {...siteGeoLineLayer} />
+                </Source>
+              )}
 
               <Source id="areas" type="geojson" data={geojson}>
                 <Layer {...fillLayer} />

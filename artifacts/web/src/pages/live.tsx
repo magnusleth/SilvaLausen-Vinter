@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import Map, { Source, Layer, NavigationControl, MapRef } from "react-map-gl/mapbox";
-import type { MapLayerMouseEvent, CircleLayer, SymbolLayer } from "react-map-gl/mapbox";
+import type { MapLayerMouseEvent, CircleLayer, SymbolLayer, FillLayer, LineLayer } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "wouter";
@@ -26,6 +26,12 @@ interface LiveSite {
   dayRule: string;
   lat: number;
   lng: number;
+  postalCode?: string | null;
+  city?: string | null;
+  codeKey?: string | null;
+  iceControl?: string | null;
+  app?: string | null;
+  bigCustomer?: string | null;
 }
 
 interface LiveCallout {
@@ -60,6 +66,16 @@ export default function LivePage() {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? "Fejl ved hentning af udkald");
       }
+      return res.json();
+    },
+    enabled: !!calloutId,
+  });
+
+  const { data: siteGeo } = useQuery<GeoJSON.FeatureCollection>({
+    queryKey: ["live-geometries", calloutId],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}/api/callouts/${calloutId}/geometries`);
+      if (!res.ok) throw new Error("Fejl");
       return res.json();
     },
     enabled: !!calloutId,
@@ -169,6 +185,28 @@ export default function LivePage() {
       "circle-stroke-color": "#ffffff",
       "circle-opacity": 0.95,
     },
+  };
+
+  const siteGeoFillLayer: FillLayer = {
+    id: "live-site-geo-fill",
+    type: "fill",
+    source: "live-site-geo",
+    filter: ["==", ["geometry-type"], "Polygon"],
+    paint: { "fill-color": ["coalesce", ["get", "color"], "#888888"], "fill-opacity": 0.4 },
+  };
+  const siteGeoOutlineLayer: LineLayer = {
+    id: "live-site-geo-outline",
+    type: "line",
+    source: "live-site-geo",
+    filter: ["==", ["geometry-type"], "Polygon"],
+    paint: { "line-color": ["coalesce", ["get", "color"], "#888888"], "line-width": 1.5, "line-opacity": 0.9 },
+  };
+  const siteGeoLineLayer: LineLayer = {
+    id: "live-site-geo-lines",
+    type: "line",
+    source: "live-site-geo",
+    filter: ["==", ["geometry-type"], "LineString"],
+    paint: { "line-color": ["coalesce", ["get", "color"], "#888888"], "line-width": 2.5, "line-opacity": 0.85 },
   };
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -331,7 +369,7 @@ export default function LivePage() {
         <Map
           ref={mapRef}
           initialViewState={{ longitude: 9.5, latitude: 56.3, zoom: 7 }}
-          mapStyle="mapbox://styles/mapbox/light-v11"
+          mapStyle="mapbox://styles/mapbox/satellite-streets-v12"
           mapboxAccessToken={MAPBOX_TOKEN}
           style={{ width: "100%", height: "100%" }}
           cursor={cursor}
@@ -343,6 +381,14 @@ export default function LivePage() {
           onError={e => setMapError(e.error?.message ?? "Kortfejl")}
         >
           <NavigationControl position="bottom-right" style={{ marginBottom: "160px" }} />
+
+          {siteGeo && (
+            <Source id="live-site-geo" type="geojson" data={siteGeo}>
+              <Layer {...siteGeoFillLayer} />
+              <Layer {...siteGeoOutlineLayer} />
+              <Layer {...siteGeoLineLayer} />
+            </Source>
+          )}
 
           <Source
             id="live-sites"
@@ -497,14 +543,42 @@ export default function LivePage() {
               </button>
             </div>
 
-            <h2 className="font-bold text-lg leading-tight mb-1">{selectedSite.name}</h2>
+            <h2 className="font-bold text-lg leading-tight mb-0.5">{selectedSite.name}</h2>
 
-            {selectedSite.address ? (
-              <p className="text-sm text-muted-foreground mb-4 leading-relaxed">
-                {selectedSite.address}
+            {selectedSite.address && (
+              <p className="text-sm text-muted-foreground mb-2 leading-relaxed">
+                {[selectedSite.address, [selectedSite.postalCode, selectedSite.city].filter(Boolean).join(" ")].filter(Boolean).join(", ")}
               </p>
-            ) : (
-              <p className="text-sm text-muted-foreground/60 mb-4 italic">Ingen adresse registreret</p>
+            )}
+
+            {/* Extra fields grid */}
+            {(selectedSite.codeKey || selectedSite.iceControl || selectedSite.app || selectedSite.bigCustomer) && (
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 mb-3">
+                {selectedSite.codeKey && (
+                  <div>
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wide">KodeNøgle</p>
+                    <p className="text-sm font-medium">{selectedSite.codeKey}</p>
+                  </div>
+                )}
+                {selectedSite.iceControl && (
+                  <div>
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Strømiddel</p>
+                    <p className="text-sm font-medium">{selectedSite.iceControl}</p>
+                  </div>
+                )}
+                {selectedSite.app && (
+                  <div>
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wide">App</p>
+                    <p className="text-sm font-medium">{selectedSite.app}</p>
+                  </div>
+                )}
+                {selectedSite.bigCustomer && (
+                  <div>
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Storkunde</p>
+                    <p className="text-sm font-medium">{selectedSite.bigCustomer}</p>
+                  </div>
+                )}
+              </div>
             )}
 
             <a

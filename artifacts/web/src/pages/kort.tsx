@@ -25,6 +25,12 @@ interface SiteMarker {
   id: string;
   name: string;
   address?: string | null;
+  postalCode?: string | null;
+  city?: string | null;
+  codeKey?: string | null;
+  iceControl?: string | null;
+  app?: string | null;
+  bigCustomer?: string | null;
   level: string;
   dayRule: string;
   active: boolean;
@@ -166,12 +172,9 @@ export default function KortPage() {
     source: "site-geo",
     filter: ["==", ["geometry-type"], "LineString"],
     paint: {
-      "line-color": [
-        "match", ["get", "level"],
-        "vip", "#f97316", "hoj", "#3b82f6", "lav", "#ef4444", "#22c55e",
-      ],
+      "line-color": ["coalesce", ["get", "color"], "#888888"],
       "line-width": 2.5,
-      "line-opacity": 0.75,
+      "line-opacity": 0.85,
     },
   };
   const geoFillLayer: FillLayer = {
@@ -180,11 +183,19 @@ export default function KortPage() {
     source: "site-geo",
     filter: ["==", ["geometry-type"], "Polygon"],
     paint: {
-      "fill-color": [
-        "match", ["get", "level"],
-        "vip", "#f97316", "hoj", "#3b82f6", "lav", "#ef4444", "#22c55e",
-      ],
-      "fill-opacity": 0.3,
+      "fill-color": ["coalesce", ["get", "color"], "#888888"],
+      "fill-opacity": 0.35,
+    },
+  };
+  const geoOutlineLayer: LineLayer = {
+    id: "site-geo-outline",
+    type: "line",
+    source: "site-geo",
+    filter: ["==", ["geometry-type"], "Polygon"],
+    paint: {
+      "line-color": ["coalesce", ["get", "color"], "#888888"],
+      "line-width": 1.5,
+      "line-opacity": 0.9,
     },
   };
 
@@ -573,7 +584,7 @@ export default function KortPage() {
             <Map
               ref={mapRef}
               initialViewState={{ longitude: 9.5, latitude: 56.3, zoom: 7 }}
-              mapStyle="mapbox://styles/mapbox/light-v11"
+              mapStyle="mapbox://styles/mapbox/satellite-streets-v12"
               mapboxAccessToken={MAPBOX_TOKEN}
               style={{ width: "100%", height: "100%" }}
               cursor={cursor}
@@ -596,10 +607,11 @@ export default function KortPage() {
                 </Source>
               )}
 
-              {/* Site geometries (lines/polygons) */}
+              {/* Site geometries (lines/polygons) with real type colors */}
               {showGeo && siteGeo && (
                 <Source id="site-geo" type="geojson" data={siteGeo}>
                   <Layer {...geoFillLayer} />
+                  <Layer {...geoOutlineLayer} />
                   <Layer {...geoLineLayer} />
                 </Source>
               )}
@@ -640,30 +652,7 @@ export default function KortPage() {
                   offset={12}
                   maxWidth="260px"
                 >
-                  <div className="p-1.5 min-w-[200px]">
-                    <div className="flex items-center gap-1.5 mb-1">
-                      <div
-                        className="w-2.5 h-2.5 rounded-full shrink-0"
-                        style={{ backgroundColor: LEVEL_HEX[popupState.site.level] }}
-                      />
-                      <span className="font-bold text-sm">{LEVEL_LABEL[popupState.site.level]}</span>
-                    </div>
-                    <h3 className="font-semibold text-sm leading-tight mb-1">{popupState.site.name}</h3>
-                    {popupState.site.address && (
-                      <p className="text-xs text-muted-foreground mb-1.5">{popupState.site.address}</p>
-                    )}
-                    <div className="flex items-center gap-1 flex-wrap">
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-muted">
-                        {popupState.site.dayRule === "altid" ? "Alle dage" : "Kun hverdage"}
-                      </span>
-                      <span className={clsx(
-                        "px-1.5 py-0.5 rounded text-[10px] font-semibold",
-                        popupState.site.active ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
-                      )}>
-                        {popupState.site.active ? "Aktiv" : "Inaktiv"}
-                      </span>
-                    </div>
-                  </div>
+                  <SitePopup site={popupState.site} />
                 </Popup>
               )}
 
@@ -721,6 +710,37 @@ export default function KortPage() {
             )}
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ── Site popup component (shared) ─────────────────────────────────────────────
+
+function SitePopup({ site }: { site: SiteMarker }) {
+  const rows: Array<{ label: string; value: string | null | undefined }> = [
+    { label: "Adresse", value: site.address },
+    { label: "Postnr / By", value: [site.postalCode, site.city].filter(Boolean).join(" ") || null },
+    { label: "Niveau", value: LEVEL_LABEL[site.level] },
+    { label: "KodeNøgle", value: site.codeKey },
+    { label: "Strømiddel", value: site.iceControl },
+    { label: "App", value: site.app },
+    { label: "Storkunde", value: site.bigCustomer },
+    { label: "Dage", value: site.dayRule === "altid" ? "Alle dage" : "Kun hverdage" },
+  ];
+  return (
+    <div className="p-2 min-w-[210px] max-w-[260px]">
+      <div className="flex items-center gap-1.5 mb-1.5">
+        <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: LEVEL_HEX[site.level] }} />
+        <h3 className="font-bold text-sm leading-tight">{site.name}</h3>
+      </div>
+      <div className="space-y-0.5">
+        {rows.map(r => r.value ? (
+          <div key={r.label} className="flex gap-1 text-xs">
+            <span className="text-muted-foreground shrink-0 w-20">{r.label}</span>
+            <span className="font-medium text-foreground truncate">{r.value}</span>
+          </div>
+        ) : null)}
       </div>
     </div>
   );

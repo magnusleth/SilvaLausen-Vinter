@@ -1,0 +1,146 @@
+Nu går vi til næste fase:
+Excel-arket UDKALDSARK 2025 2026 skal være den primære datakilde for pladsernes stamdata.
+
+VIGTIGT:
+UDKALDSARK 2025 2026 er source of truth for:
+- pladsnavn
+- adresse
+- postnr
+- by
+- niveau
+- kundenr / kodenøgle
+- strømiddel
+- app
+- storkunde
+- område hvis det findes
+- øvrige pladsoplysninger
+
+Kortdata og geojson skal bruges til:
+- pladsgeometri
+- områdegrænser
+- visning på kort
+- farvekodning af geometri
+
+Fokus i denne opgave:
+1. import fra Excel
+2. geokodning af pladser ud fra adresse
+3. visning af pladsgeometri på chaufførlink og disponentkort
+4. rigtige farver på pladsgeometri
+5. popup-info på prikker/markører
+
+Byg ikke SMS endnu.
+Byg ikke GPS endnu.
+Rør ikke datamodellen unødigt.
+Behold eksisterende callout-flow.
+
+OPGAVE:
+
+1. Analysér Excel-filen UDKALDSARK 2025 2026
+- identificér hvilke ark og kolonner der indeholder pladser
+- identificér felter for:
+  - pladsnavn
+  - adresse
+  - postnr
+  - by
+  - niveau
+  - kodenøgle
+  - strømiddel
+  - app
+  - storkunde
+  - område / vejrområde / kortområde hvis det findes
+  - aktiv/inaktiv hvis det findes
+- forklar mapping tydeligt før implementering
+
+2. Brug Excel som primær kilde til sites
+- opret eller opdater sites fra Excel
+- hvis samme plads også findes i tidligere CSV/importer, så skal Excel have forrang for stamdata
+- behold evt. eksisterende relationer til callouts og areas
+
+3. Lav markører/prikker ud fra adresse i Excel
+- geokod pladser ud fra adresse + postnr + by
+- brug adressebaseret geokodning hvis der ikke allerede findes korrekte koordinater
+- hvis der allerede findes bedre eksisterende koordinater fra tidligere importer, så forklar prioriteringsreglen
+- gem resultat i site_markers
+- rapportér:
+  - hvor mange pladser blev geokodet succesfuldt
+  - hvor mange kunne ikke matches sikkert
+  - hvilke pladser kræver manuel kontrol
+
+4. Importér og vis pladsgeometri
+- brug geojson/csv-filer til at oprette eller opdatere site_geometries
+- prøv at matche geometri til plads via:
+  - pladsnavn
+  - nummer / kode / scribble-id
+  - adresse hvis muligt
+- forklar match-strategien tydeligt
+- hvis match er usikkert, markér det i rapporten
+
+5. Vis pladsgeometri på kort og chaufførlink
+Opdater:
+- /kort
+- /udkald/:id
+- /live/:calloutId
+
+Så de kan vise:
+- site_markers som prikker
+- site_geometries som overlays på kortet
+- kun relevante geometries på chaufførlinket for det konkrete udkald
+
+6. Brug disse farver til pladsgeometri
+Farverne på pladsgeometri skal være:
+
+- Blå = stitraktor
+- Orange = stor saltspreder
+- Rød = håndarbejde
+- Grøn = her skal bruges urea som tømiddel og ikke salt
+
+Implementér en tydelig regel for hvordan geometri får farve:
+- hvis geometridata allerede indeholder type, brug den
+- ellers forsøg at aflede type fra Excel-felter eller metadata
+- hvis ikke muligt, forklar hvad der mangler og brug en neutral fallback
+
+7. Skift kortstil til satellit / luftfoto i høj kvalitet
+På:
+- /kort
+- /udkald/:id
+- /live/:calloutId
+
+brug en satellit / aerial style i god kvalitet som baggrundskort, så pladsgeometri er tydelig mod underlaget.
+
+8. Popup-info når man trykker på en prik
+Når man klikker på en pladsmarkør, skal popup vise mindst:
+
+- Plads navn
+- Adresse
+- post nr
+- By
+- Niveau
+- KodeNøgle
+- Strømiddel
+- App
+- Storkunde
+
+Popup’en skal ligne informationsboksen fra mit referencebillede og data skal komme fra Excel-filen.
+
+9. Chaufførlink skal være mere operationelt
+På /live/:calloutId:
+- vis kun pladser i det konkrete udkald
+- vis deres geometri med korrekte farver
+- klik på prik → vis popup-info
+- behold knap til navigation
+
+10. Datakvalitetsrapport
+Når du er færdig, giv en præcis rapport:
+A. Hvilke ark og kolonner fra Excel blev brugt
+B. Hvor mange sites blev oprettet/opdateret fra Excel
+C. Hvor mange markører blev geokodet fra adresse
+D. Hvor mange sites har matchet geometri
+E. Hvordan farver på geometri blev bestemt
+F. Hvilke datafelter stadig mangler eller er usikre
+
+VIGTIGT:
+- UDKALDSARK 2025 2026 skal behandles som primær kilde til pladsdata
+- Kortdata bruges til visning og geometri
+- Behold eksisterende udkaldslogik og callout_sites
+- Ingen mock data
+- Ingen generiske admin-sider
