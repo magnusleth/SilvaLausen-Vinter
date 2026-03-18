@@ -94,12 +94,21 @@ Every package extends `tsconfig.base.json` which sets `composite: true`. The roo
 | `salt_orders` | callouts, areas, companies | Saltordrer |
 | `audit_logs` | — | Ændringssporing (tabel+record+action) |
 
-### Farvelogik (callout_area_statuses.color)
-- **grå** = ingen kørsel
-- **orange** = kun VIP
-- **blå** = HØJ + VIP
-- **rød** = LAV + HØJ + VIP
-- **grøn** = alle pladser (standard + LAV + HØJ + VIP)
+### Farvelogik (callout_area_statuses.color → sites.level)
+| Farve | Aktiverede niveauer | Bemærkning |
+|---|---|---|
+| grå | — | Ingen kørsel |
+| orange | vip | Kun VIP-pladser |
+| blå | vip + hoj | Høj prioritet |
+| rød | vip + hoj + lav | Lav + Høj prioritet |
+| grøn | vip + hoj + lav + basis | Alle aktive pladser |
+
+`basis` er det laveste prioritetsniveau og aktiveres kun ved grøn.
+
+### Vigtige designbeslutninger
+- `people` er udelukkende driftspersonale (chauffører, disponenter, UE-folk) og knyttes altid til en `company`. De er ikke kundedata.
+- `callout_recipients.person_id` er NOT NULL i MVP — SMS sendes til personer, ikke direkte til companies eller vehicles.
+- `callout_recipients.vehicle_id` er valgfrit kontekst (hvilket køretøj personen kører med), ikke en direkte modtager.
 
 ## Packages
 

@@ -3,7 +3,19 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { areasTable } from "./areas";
 
-export const siteLevelEnum = ["vip", "hoj", "lav", "standard"] as const;
+/**
+ * Niveauhierarki for pladser — bruges til at beregne hvilke pladser
+ * der aktiveres for et givent udkald-område ud fra callout_area_statuses.color:
+ *
+ *   grå    → ingen pladser (ingen kørsel)
+ *   orange → vip
+ *   blå    → vip + hoj
+ *   rød    → vip + hoj + lav
+ *   grøn   → vip + hoj + lav + basis  (alle aktive pladser)
+ *
+ * "basis" er det laveste prioritetsniveau og aktiveres kun ved grøn.
+ */
+export const siteLevelEnum = ["vip", "hoj", "lav", "basis"] as const;
 export type SiteLevel = (typeof siteLevelEnum)[number];
 
 export const siteDayRuleEnum = ["altid", "hverdage", "weekend", "hverdage_og_lordag"] as const;
@@ -16,7 +28,7 @@ export const sitesTable = pgTable("sites", {
     .references(() => areasTable.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   address: text("address"),
-  level: text("level").notNull().default("standard"),
+  level: text("level").notNull().default("basis"),
   dayRule: text("day_rule").notNull().default("altid"),
   active: boolean("active").notNull().default(true),
   notes: text("notes"),

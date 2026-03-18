@@ -2,15 +2,20 @@ import { pgTable, text, timestamp, uuid, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { companiesTable } from "./companies";
-import { customersTable } from "./customers";
 
-export const personRoleEnum = ["chauffør", "disponent", "kontakt", "leder", "andet"] as const;
+export const personRoleEnum = ["chauffør", "disponent", "leder", "andet"] as const;
 export type PersonRole = (typeof personRoleEnum)[number];
 
+/**
+ * People repræsenterer driftspersonale: chauffører, disponenter, ledere og UE-folk.
+ * De tilhører altid et firma (company_id). De er IKKE kundedata.
+ * Kundekontakter modelleres som customers.contact_person (tekst) i MVP.
+ */
 export const peopleTable = pgTable("people", {
   id: uuid("id").primaryKey().defaultRandom(),
-  companyId: uuid("company_id").references(() => companiesTable.id, { onDelete: "set null" }),
-  customerId: uuid("customer_id").references(() => customersTable.id, { onDelete: "set null" }),
+  companyId: uuid("company_id")
+    .notNull()
+    .references(() => companiesTable.id, { onDelete: "restrict" }),
   firstName: text("first_name").notNull(),
   lastName: text("last_name").notNull(),
   phone: text("phone"),
