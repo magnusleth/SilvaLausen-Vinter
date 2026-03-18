@@ -23,6 +23,7 @@ const ASSETS = path.join(__dirname, '../attached_assets');
 // Color → geom_type mapping
 const COLOR_TYPE = {
   '#1F49FF': 'stitraktor',
+  '#2F46E1': 'stitraktor',
   '#FFB124': 'saltspreder',
   '#EB0920': 'haandarbejde',
   '#00B016': 'urea',
