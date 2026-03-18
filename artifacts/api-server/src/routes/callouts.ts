@@ -1,5 +1,13 @@
 import { Router, type IRouter } from "express";
-import { db, calloutsTable, calloutAreaStatusesTable, areasTable, areaGeometriesTable } from "@workspace/db";
+import {
+  db,
+  calloutsTable,
+  calloutAreaStatusesTable,
+  calloutSitesTable,
+  areasTable,
+  areaGeometriesTable,
+  sitesTable,
+} from "@workspace/db";
 import { inArray } from "drizzle-orm";
 import {
   ListCalloutsResponse,
@@ -17,6 +25,15 @@ import {
   SetCalloutAreaStatusResponse,
 } from "@workspace/api-zod";
 import { eq, and } from "drizzle-orm";
+
+// Color → which site levels are included (snapshot logic)
+const COLOR_LEVELS: Record<string, string[]> = {
+  grå: [],
+  orange: ["vip"],
+  blå: ["vip", "hoj"],
+  rød: ["vip", "hoj", "lav"],
+  grøn: ["vip", "hoj", "lav", "basis"],
+};
 
 const router: IRouter = Router();
 
@@ -42,28 +59,49 @@ router.post("/callouts", async (req, res): Promise<void> => {
     .values({ ...parsed.data, status: "kladde" })
     .returning();
 
-  // Optionally accept areaStatuses: Array<{areaId: string, color: string}>
-  const areaStatuses = req.body.areaStatuses;
-  if (Array.isArray(areaStatuses) && areaStatuses.length > 0) {
-    const rows = areaStatuses
-      .filter((s: { areaId?: string; color?: string }) => s.areaId && s.color)
-      .map((s: { areaId: string; color: string }) => ({
-        calloutId: callout.id,
-        areaId: s.areaId,
-        color: s.color,
-      }));
-    if (rows.length > 0) {
-      await db.insert(calloutAreaStatusesTable).values(rows);
+  // Save area statuses
+  const areaStatuses: Array<{ areaId: string; color: string }> = req.body.areaStatuses ?? [];
+  const validStatuses = areaStatuses.filter(s => s.areaId && s.color);
+
+  if (validStatuses.length > 0) {
+    await db.insert(calloutAreaStatusesTable).values(
+      validStatuses.map(s => ({ calloutId: callout.id, areaId: s.areaId, color: s.color }))
+    );
+  }
+
+  // --- Snapshot: compute and save callout_sites ---
+  // For each area assignment, find all active sites matching the color's levels
+  // and insert as a frozen snapshot (manualOverride=false).
+  let totalSitesSaved = 0;
+  for (const { areaId, color } of validStatuses) {
+    const levels = COLOR_LEVELS[color] ?? [];
+    if (levels.length === 0) continue;
+
+    const sites = await db
+      .select({ id: sitesTable.id })
+      .from(sitesTable)
+      .where(
+        and(
+          eq(sitesTable.areaId, areaId),
+          eq(sitesTable.active, true),
+          inArray(sitesTable.level, levels)
+        )
+      );
+
+    if (sites.length > 0) {
+      await db.insert(calloutSitesTable).values(
+        sites.map(s => ({
+          calloutId: callout.id,
+          siteId: s.id,
+          included: true,
+          manualOverride: false,
+        }))
+      );
+      totalSitesSaved += sites.length;
     }
   }
 
-  // Return full callout detail with area statuses
-  const savedStatuses = await db
-    .select()
-    .from(calloutAreaStatusesTable)
-    .where(eq(calloutAreaStatusesTable.calloutId, callout.id));
-
-  res.status(201).json({ ...callout, areaStatuses: savedStatuses });
+  res.status(201).json({ ...callout, totalSitesSaved });
 });
 
 router.get("/callouts/:id", async (req, res): Promise<void> => {
@@ -93,7 +131,7 @@ router.get("/callouts/:id", async (req, res): Promise<void> => {
   res.json(GetCalloutResponse.parse({ ...callout, areaStatuses }));
 });
 
-// Rich map view endpoint — callout + area statuses + area names + geometries
+// Rich map view endpoint — callout + area statuses + area names + geometries + site snapshot
 router.get("/callouts/:id/map", async (req, res): Promise<void> => {
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
 
@@ -112,7 +150,44 @@ router.get("/callouts/:id/map", async (req, res): Promise<void> => {
     .from(calloutAreaStatusesTable)
     .where(eq(calloutAreaStatusesTable.calloutId, raw));
 
-  let areasWithGeo: Array<{ id: string; name: string; color: string; geometry: unknown }> = [];
+  // Load snapshot sites for this callout (joined with sites for names/area)
+  const snapshotSites = await db
+    .select({
+      siteId: calloutSitesTable.siteId,
+      name: sitesTable.name,
+      level: sitesTable.level,
+      address: sitesTable.address,
+      areaId: sitesTable.areaId,
+    })
+    .from(calloutSitesTable)
+    .innerJoin(sitesTable, eq(calloutSitesTable.siteId, sitesTable.id))
+    .where(
+      and(
+        eq(calloutSitesTable.calloutId, raw),
+        eq(calloutSitesTable.included, true)
+      )
+    )
+    .orderBy(sitesTable.level, sitesTable.name);
+
+  // Group sites by area
+  const sitesByArea: Record<string, { count: number; sites: Array<{ name: string; level: string; address?: string | null }> }> = {};
+  for (const s of snapshotSites) {
+    if (!s.areaId) continue;
+    if (!sitesByArea[s.areaId]) sitesByArea[s.areaId] = { count: 0, sites: [] };
+    sitesByArea[s.areaId].count++;
+    if (sitesByArea[s.areaId].sites.length < 50) {
+      sitesByArea[s.areaId].sites.push({ name: s.name, level: s.level, address: s.address });
+    }
+  }
+
+  let areasWithGeo: Array<{
+    id: string;
+    name: string;
+    color: string;
+    geometry: unknown;
+    siteCount: number;
+    sites: Array<{ name: string; level: string; address?: string | null }>;
+  }> = [];
 
   if (areaStatuses.length > 0) {
     const areaIds = areaStatuses.map(s => s.areaId);
@@ -139,10 +214,14 @@ router.get("/callouts/:id/map", async (req, res): Promise<void> => {
       name: areaMap[s.areaId]?.name ?? "Ukendt",
       color: s.color,
       geometry: geoByArea[s.areaId] ?? null,
+      siteCount: sitesByArea[s.areaId]?.count ?? 0,
+      sites: sitesByArea[s.areaId]?.sites ?? [],
     }));
   }
 
-  res.json({ ...callout, areas: areasWithGeo });
+  const totalSites = snapshotSites.length;
+
+  res.json({ ...callout, areas: areasWithGeo, totalSites });
 });
 
 router.patch("/callouts/:id", async (req, res): Promise<void> => {

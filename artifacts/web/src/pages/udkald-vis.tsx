@@ -15,6 +15,9 @@ import {
   CheckCheck,
   Info,
   Map as MapIcon,
+  ChevronDown,
+  ChevronUp,
+  Users,
 } from "lucide-react";
 import { clsx } from "clsx";
 import { format } from "date-fns";
@@ -31,12 +34,22 @@ const COLOR_DEF = [
   { id: "grøn",   label: "Alle pladser",    hex: "#22c55e", activates: "VIP, Høj, Lav, Basis" },
 ] as const;
 
+const LEVEL_LABEL: Record<string, string> = { vip: "VIP", hoj: "HØJ", lav: "LAV", basis: "BASIS" };
+const LEVEL_HEX: Record<string, string> = {
+  vip: "#f97316", hoj: "#3b82f6", lav: "#ef4444", basis: "#22c55e",
+};
+
 function colorHex(c: string) {
   return COLOR_DEF.find(d => d.id === c)?.hex ?? "#94a3b8";
 }
-
 function colorLabel(c: string) {
   return COLOR_DEF.find(d => d.id === c)?.label ?? c;
+}
+
+interface SiteSnap {
+  name: string;
+  level: string;
+  address?: string | null;
 }
 
 interface CalloutArea {
@@ -44,6 +57,8 @@ interface CalloutArea {
   name: string;
   color: string;
   geometry: GeoJSON.Feature<GeoJSON.Polygon> | null;
+  siteCount: number;
+  sites: SiteSnap[];
 }
 
 interface CalloutMapData {
@@ -54,6 +69,7 @@ interface CalloutMapData {
   createdAt: string;
   startedAt?: string | null;
   areas: CalloutArea[];
+  totalSites: number;
 }
 
 function computeCentroid(coords: number[][]): [number, number] {
@@ -75,6 +91,39 @@ const STATUS_COLORS: Record<string, string> = {
   afsluttet: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400",
   annulleret: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
 };
+
+function AreaSiteList({ area }: { area: CalloutArea }) {
+  const [expanded, setExpanded] = useState(false);
+  if (area.siteCount === 0) return null;
+  const shown = expanded ? area.sites : area.sites.slice(0, 4);
+
+  return (
+    <div className="mt-1.5 pl-5 space-y-0.5">
+      {shown.map((site, i) => (
+        <div key={i} className="flex items-center gap-1.5 text-[11px]">
+          <span
+            className="w-1.5 h-1.5 rounded-full shrink-0"
+            style={{ backgroundColor: LEVEL_HEX[site.level] ?? "#94a3b8" }}
+          />
+          <span className="text-muted-foreground truncate">{site.name}</span>
+          <span className="text-muted-foreground/50 text-[9px] ml-auto shrink-0">
+            {LEVEL_LABEL[site.level] ?? site.level}
+          </span>
+        </div>
+      ))}
+      {area.sites.length > 4 && (
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground mt-1"
+        >
+          {expanded
+            ? <><ChevronUp className="w-3 h-3" /> Vis færre</>
+            : <><ChevronDown className="w-3 h-3" /> + {area.sites.length - 4} flere</>}
+        </button>
+      )}
+    </div>
+  );
+}
 
 export default function UdkaldVisPage() {
   const params = useParams<{ id: string }>();
@@ -98,11 +147,7 @@ export default function UdkaldVisPage() {
       if (!area.geometry) continue;
       features.push({
         type: "Feature",
-        properties: {
-          id: area.id,
-          name: area.name,
-          color: colorHex(area.color),
-        },
+        properties: { id: area.id, name: area.name, color: colorHex(area.color) },
         geometry: area.geometry.geometry,
       });
     }
@@ -113,21 +158,14 @@ export default function UdkaldVisPage() {
     id: "areas-fill",
     type: "fill",
     source: "areas",
-    paint: {
-      "fill-color": ["get", "color"],
-      "fill-opacity": 0.4,
-    },
+    paint: { "fill-color": ["get", "color"], "fill-opacity": 0.4 },
   };
 
   const outlineLayer: LineLayer = {
     id: "areas-outline",
     type: "line",
     source: "areas",
-    paint: {
-      "line-color": ["get", "color"],
-      "line-width": 2,
-      "line-opacity": 0.9,
-    },
+    paint: { "line-color": ["get", "color"], "line-width": 2, "line-opacity": 0.9 },
   };
 
   const handleCopyLink = () => {
@@ -161,8 +199,10 @@ export default function UdkaldVisPage() {
   }
 
   const activeAreas = data.areas.filter(a => a.color !== "grå");
+  const inactiveAreas = data.areas.filter(a => a.color === "grå");
   const statusLabel = STATUS_LABELS[data.status] ?? data.status;
   const statusClass = STATUS_COLORS[data.status] ?? "bg-muted text-muted-foreground";
+  const totalSites = data.totalSites ?? 0;
 
   return (
     <div className="h-full flex flex-col overflow-hidden bg-background">
@@ -176,7 +216,7 @@ export default function UdkaldVisPage() {
             <ArrowLeft className="w-4 h-4 text-muted-foreground" />
           </button>
           <div className="w-9 h-9 rounded-xl bg-red-100 dark:bg-red-900/30 flex items-center justify-center text-red-600 shrink-0 mt-0.5">
-            <Siren className="w-4.5 h-4.5" />
+            <Siren className="w-5 h-5" />
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
@@ -187,15 +227,21 @@ export default function UdkaldVisPage() {
                 {statusLabel}
               </span>
             </div>
-            <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground flex-wrap">
+            <div className="flex items-center gap-4 mt-0.5 text-xs text-muted-foreground flex-wrap">
               <span className="flex items-center gap-1">
                 <Calendar className="w-3 h-3" />
                 {format(new Date(data.createdAt), "d. MMM yyyy HH:mm", { locale: da })}
               </span>
               <span className="flex items-center gap-1">
                 <MapPin className="w-3 h-3" />
-                {activeAreas.length} {activeAreas.length === 1 ? "område" : "områder"} aktiveret
+                {activeAreas.length} {activeAreas.length === 1 ? "område" : "områder"}
               </span>
+              {totalSites > 0 && (
+                <span className="flex items-center gap-1 font-medium text-foreground">
+                  <Users className="w-3 h-3" />
+                  {totalSites} pladser
+                </span>
+              )}
             </div>
             {data.notes && (
               <p className="text-xs text-muted-foreground mt-1 italic max-w-xl">{data.notes}</p>
@@ -210,73 +256,104 @@ export default function UdkaldVisPage() {
           className="shrink-0 gap-1.5 ml-4"
         >
           {copied ? (
-            <>
-              <CheckCheck className="w-3.5 h-3.5 text-green-600" />
-              Kopieret!
-            </>
+            <><CheckCheck className="w-3.5 h-3.5 text-green-600" /> Kopieret!</>
           ) : (
-            <>
-              <Copy className="w-3.5 h-3.5" />
-              Kopier link
-            </>
+            <><Copy className="w-3.5 h-3.5" /> Kopier link</>
           )}
         </Button>
       </div>
 
       {/* Body: Sidebar + Map */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left sidebar — area list */}
-        <div className="w-64 shrink-0 bg-card border-r border-border flex flex-col overflow-y-auto z-10">
-          <div className="p-4 space-y-3">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
-                Aktive Områder
-              </p>
-              {activeAreas.length === 0 ? (
-                <p className="text-xs text-muted-foreground italic">Ingen områder aktiveret</p>
-              ) : (
-                <div className="space-y-1">
-                  {activeAreas.map(area => (
-                    <div
-                      key={area.id}
-                      className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-muted/50"
-                    >
-                      <span
-                        className="w-3 h-3 rounded-full shrink-0 border border-white/20 shadow-sm"
-                        style={{ backgroundColor: colorHex(area.color) }}
-                      />
-                      <div className="min-w-0">
-                        <p className="text-xs font-medium truncate">{area.name}</p>
-                        <p className="text-[10px] text-muted-foreground">{colorLabel(area.color)}</p>
-                      </div>
+        {/* Left sidebar */}
+        <div className="w-72 shrink-0 bg-card border-r border-border flex flex-col overflow-hidden z-10">
+          <div className="flex-1 overflow-y-auto">
+            <div className="p-4 space-y-4">
+
+              {/* Site totals summary */}
+              {totalSites > 0 && (
+                <div className="bg-primary/5 border border-primary/20 rounded-xl px-4 py-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-primary">
+                      Pladser i udkald
+                    </span>
+                    <span className="text-xl font-bold text-primary">{totalSites}</span>
+                  </div>
+                  {activeAreas.length > 0 && (
+                    <div className="mt-2 space-y-0.5">
+                      {activeAreas.map(a => (
+                        a.siteCount > 0 && (
+                          <div key={a.id} className="flex items-center justify-between text-xs">
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: colorHex(a.color) }} />
+                              <span className="text-muted-foreground truncate max-w-[140px]">{a.name}</span>
+                            </div>
+                            <span className="font-semibold text-foreground">{a.siteCount}</span>
+                          </div>
+                        )
+                      ))}
                     </div>
-                  ))}
+                  )}
                 </div>
               )}
-            </div>
 
-            {data.areas.length > activeAreas.length && (
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
-                  Inaktive Områder
-                </p>
-                <div className="space-y-0.5">
-                  {data.areas
-                    .filter(a => a.color === "grå")
-                    .map(area => (
-                      <div key={area.id} className="flex items-center gap-2.5 px-3 py-1.5">
+              {/* Active areas with site lists */}
+              {activeAreas.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                    Aktive Områder
+                  </p>
+                  <div className="space-y-2">
+                    {activeAreas.map(area => (
+                      <div key={area.id} className="rounded-lg border border-border/60 bg-muted/20 p-2.5">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="w-3 h-3 rounded-full shrink-0 border border-white/20 shadow-sm"
+                            style={{ backgroundColor: colorHex(area.color) }}
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-semibold truncate">{area.name}</p>
+                            <p className="text-[10px] text-muted-foreground">{colorLabel(area.color)}</p>
+                          </div>
+                          {area.siteCount > 0 && (
+                            <Badge variant="secondary" className="text-[10px] shrink-0">
+                              {area.siteCount}
+                            </Badge>
+                          )}
+                        </div>
+                        <AreaSiteList area={area} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Inactive areas */}
+              {inactiveAreas.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">
+                    Inaktive Områder
+                  </p>
+                  <div className="space-y-0.5">
+                    {inactiveAreas.map(area => (
+                      <div key={area.id} className="flex items-center gap-2 px-2 py-1">
                         <span className="w-2.5 h-2.5 rounded-full shrink-0 bg-slate-300 dark:bg-slate-600" />
                         <p className="text-xs text-muted-foreground truncate">{area.name}</p>
                       </div>
                     ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+
+              {activeAreas.length === 0 && (
+                <p className="text-xs text-muted-foreground italic">Ingen områder aktiveret.</p>
+              )}
+            </div>
           </div>
 
           {/* Color legend */}
-          <div className="mt-auto p-4 border-t border-border bg-slate-900 dark:bg-slate-950">
-            <div className="flex items-center gap-2 mb-3">
+          <div className="p-4 border-t border-border bg-slate-900 dark:bg-slate-950 shrink-0">
+            <div className="flex items-center gap-2 mb-2.5">
               <Info className="w-3.5 h-3.5 text-slate-400" />
               <span className="text-[10px] font-semibold text-slate-300 uppercase tracking-wide">
                 Farveforklaring
@@ -285,10 +362,7 @@ export default function UdkaldVisPage() {
             <div className="space-y-1.5">
               {COLOR_DEF.filter(c => c.id !== "grå").map(c => (
                 <div key={c.id} className="flex items-center gap-2 text-xs">
-                  <span
-                    className="w-2.5 h-2.5 rounded-full shrink-0"
-                    style={{ backgroundColor: c.hex }}
-                  />
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: c.hex }} />
                   <span className="text-slate-300 font-medium text-[11px]">{c.label}</span>
                 </div>
               ))}
@@ -296,10 +370,10 @@ export default function UdkaldVisPage() {
           </div>
         </div>
 
-        {/* Map */}
+        {/* Map — main view */}
         <div className="flex-1 relative">
           {!MAPBOX_TOKEN ? (
-            <NoMapFallback areas={data.areas} />
+            <NoMapFallback data={data} />
           ) : (
             <Map
               initialViewState={{ longitude: 9.5, latitude: 56.3, zoom: 7 }}
@@ -338,6 +412,9 @@ export default function UdkaldVisPage() {
                       style={isActive ? { backgroundColor: colorHex(area.color) } : {}}
                     >
                       {area.name}
+                      {isActive && area.siteCount > 0 && (
+                        <span className="ml-1.5 opacity-80 text-[10px]">({area.siteCount})</span>
+                      )}
                     </div>
                   </Popup>
                 );
@@ -350,26 +427,34 @@ export default function UdkaldVisPage() {
   );
 }
 
-function NoMapFallback({ areas }: { areas: CalloutArea[] }) {
-  const activeAreas = areas.filter(a => a.color !== "grå");
+function NoMapFallback({ data }: { data: CalloutMapData }) {
+  const activeAreas = data.areas.filter(a => a.color !== "grå");
   return (
     <div className="w-full h-full flex items-center justify-center bg-slate-100 dark:bg-slate-900">
-      <div className="text-center space-y-4 p-8">
+      <div className="text-center space-y-4 p-8 max-w-sm">
         <MapIcon className="w-10 h-10 text-muted-foreground mx-auto" />
         <p className="text-sm text-muted-foreground">
-          Tilføj <code className="bg-muted px-1 rounded">VITE_MAPBOX_TOKEN</code> for at se kortet.
+          Tilføj <code className="bg-muted px-1 rounded text-xs">VITE_MAPBOX_TOKEN</code> for at se kortet.
         </p>
-        <div className="grid grid-cols-2 gap-2 max-w-xs text-left">
-          {activeAreas.map(area => (
-            <div key={area.id} className="flex items-center gap-2 text-xs">
-              <span
-                className="w-3 h-3 rounded-full shrink-0"
-                style={{ backgroundColor: colorHex(area.color) }}
-              />
-              <span className="font-medium">{area.name}</span>
+        {data.totalSites > 0 && (
+          <div className="bg-card rounded-xl border p-4 text-left space-y-2">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+              Inkluderede pladser
+            </p>
+            <p className="text-2xl font-bold">{data.totalSites}</p>
+            <div className="space-y-1.5">
+              {activeAreas.map(area => (
+                <div key={area.id} className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: colorHex(area.color) }} />
+                    <span>{area.name}</span>
+                  </div>
+                  <span className="font-bold">{area.siteCount}</span>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );

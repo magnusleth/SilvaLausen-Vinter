@@ -105,7 +105,24 @@ Every package extends `tsconfig.base.json` which sets `composite: true`. The roo
 
 `basis` er det laveste prioritetsniveau og aktiveres kun ved grøn.
 
+### Callout oprettelsesflow (POST /api/callouts)
+1. Opret `callouts` row
+2. Opret `callout_area_statuses` rows (en per aktiveret område)
+3. **Snapshot**: For hvert aktiveret område → find aktive pladser med matchende niveauer → gem i `callout_sites` med `included=true, manual_override=false`
+- Snapshot er fastfrosset ved oprettelsestidspunkt; efterfølgende ændringer i `sites` påvirker ikke eksisterende udkald.
+
+### API endpoints (implementerede)
+- `GET /api/areas-with-geometry` — alle områder + GeoJSON polygon
+- `GET /api/callouts/:id/map` — udkald + aktive områder + geometrier + pladssnapshot per område
+- `POST /api/callouts` — opret udkald med area-statuses og plads-snapshot
+- `GET /api/sites/map` — site markers med koordinater (filter: areaId, level)
+- `GET /api/sites/geometries` — GeoJSON FeatureCollection med site-geometrier
+- `POST /api/sites/callout-preview` — forhåndsberegn pladser givet `{assignments: [{areaId, color}]}`
+
 ### Vigtige designbeslutninger
+- `callout_sites` er et snapshot — ændringer i `sites` tabel efter oprettelse ændrer ikke udkald
+- Farvelogikken er identisk i preview (POST /sites/callout-preview) og lagring (POST /callouts)
+- `callout_sites.manual_override = false` som default; reserveret til fremtidigt manuelt override
 - `people` er udelukkende driftspersonale (chauffører, disponenter, UE-folk) og knyttes altid til en `company`. De er ikke kundedata.
 - `callout_recipients.person_id` er NOT NULL i MVP — SMS sendes til personer, ikke direkte til companies eller vehicles.
 - `callout_recipients.vehicle_id` er valgfrit kontekst (hvilket køretøj personen kører med), ikke en direkte modtager.
