@@ -1,0 +1,98 @@
+Excel-fasen er ikke færdig endnu.
+
+Der er stadig 3 konkrete fejl:
+
+1. Popup-data er ikke komplette
+På kortet mangler popup stadig datafelter fra Excel, fx:
+- postnr
+- by
+- kodenøgle
+- strømiddel
+- app
+- storkunde
+- evt. dage
+
+2. Pladsgeometri vises stadig ikke korrekt
+Selv når laget "Vis pladsgeometri" er slået til, er geometri ikke synlig for pladser hvor den burde findes.
+
+3. Excel-importen er ikke fuldendt
+Kortet viser stadig kun ca. 119 pladser, men UDKALDSARK 2025 2026 skal være source of truth og indeholder 900+ pladser.
+Der skal derfor oprettes/opdateres markører for alle relevante pladser fra Excel, ud fra adressebaseret geokodning eller eksisterende koordinater.
+
+VIGTIGT:
+- Stop med UI-polish
+- Fokusér kun på datakomplethed og korrekt mapping
+- UDKALDSARK 2025 2026 er source of truth for sites
+- Rør ikke callout-logikken
+- Rør ikke chaufførflowet unødigt
+
+OPGAVE:
+
+1. Genanalysér Excel-filen UDKALDSARK 2025 2026
+- identificér præcist hvilke ark og kolonner der udgør det fulde pladskartotek
+- forklar hvilke rækker der er reelle pladser og hvilke der skal ignoreres
+- bekræft det totale antal pladser fundet i Excel
+
+2. Importér alle pladser fra Excel til sites
+- opret eller opdater alle sites fra Excel
+- Excel skal have forrang for stamdata
+- rapportér hvor mange sites der findes efter fuld import
+
+3. Opret markører for alle pladser
+- brug eksisterende koordinater hvis de findes
+- ellers geokod ud fra:
+  adresse + postnr + by
+- opret site_markers for alle pladser hvor det er muligt
+- rapportér:
+  - hvor mange sites fik markør
+  - hvor mange kunne ikke geokodes sikkert
+  - en liste over de sites der mangler koordinater
+
+4. Fuldfør popup-mapping fra Excel
+Når man klikker på en markør, skal popup vise disse felter fra Excel hvis de findes:
+- Plads navn
+- Adresse
+- post nr
+- By
+- Niveau
+- KodeNøgle
+- Strømiddel
+- App
+- Storkunde
+- Dage
+
+Hvis et felt mangler for en plads, vis tom værdi eller “-”, men forklar hvorfor.
+Kontrollér mindst 5 konkrete pladser mod Excel-data.
+
+5. Få site_geometries til at virke rigtigt
+- undersøg hvor mange sites der faktisk har matchet geometri
+- vis geometri tydeligt på /kort og /live/:calloutId
+- hvis geometrien ikke matcher, forklar hvorfor
+- hvis match-strategien er for svag, forbedr den med:
+  - pladsnavn
+  - kode/nummer
+  - adresse
+  - evt. scribble-id hvis tilgængeligt
+
+6. Farver på geometri
+Bekræft og implementér konsekvent:
+- blå = stitraktor
+- orange = stor saltspreder
+- rød = håndarbejde
+- grøn = urea
+
+Hvis type ikke kan bestemmes for en geometri, rapportér det eksplicit.
+
+7. Giv en præcis datarapport
+A. Hvor mange pladser blev fundet i Excel i alt
+B. Hvor mange sites findes nu i databasen
+C. Hvor mange sites har markør
+D. Hvor mange sites har geometri
+E. Hvor mange popup-felter kommer faktisk fra Excel
+F. Hvilke felter eller pladser er stadig ufuldstændige
+
+VIGTIGT:
+- Ingen mock data
+- Ingen antagelse om at 119 pladser er nok
+- Målet er at få hele pladskartoteket fra Excel ind som source of truth
+- Når du er færdig, vis 5 konkrete eksempler med fulde popup-data
