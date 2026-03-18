@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 /**
- * Step 1: Import alle sites fra Excel Pladser-arket
- * Scope: KUN linje 1–939 i arket. Alt under linje 939 ignoreres.
- * Inkluderer ALLE statuser: Aktiv, NyAktiv, Inaktiv, Tilbud, Udgår, blank
+ * Import alle sites fra Excel Pladser-arket (linje 1–939)
+ * - Sætter from_excel = true for alle importerede sites
+ * - Gemmer ALLE 74 kolonner i excel_data JSONB
+ * - Kernefelter gemmes som rigtige DB-kolonner
  */
 const PG_PATH = '/home/runner/workspace/node_modules/.pnpm/pg@8.20.0/node_modules/pg';
 const XLSX_PATH = '/home/runner/workspace/node_modules/.pnpm/xlsx@0.18.5/node_modules/xlsx';
@@ -13,27 +14,22 @@ const path = require('path');
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const ASSETS = path.join(__dirname, '../attached_assets');
 
-// --- Mapping helpers ---
 function mapNiveau(n) {
   const m = { 'VIP': 'vip', 'Høj': 'hoj', 'Høj ': 'hoj', 'Lav': 'lav', 'Spare': 'basis', 'Udkald på bestilling': 'basis' };
   return m[String(n).trim()] || 'basis';
 }
 function mapDage(d) { return String(d).trim() === 'KunHverdage' ? 'hverdage' : 'altid'; }
-
-// Active = kun Aktiv og NyAktiv; alle andre (Udgår, Inaktiv, Tilbud, blank) → false
 function mapActive(status) {
   const s = String(status).trim();
   return s === 'Aktiv' || s === 'NyAktiv';
 }
 
-// Normalize vejrområde to known area name
 const VEJR_MAP = {
   'aars': 'Aalborg',
   'aarhus': null,
   'randbøl': 'Vejle',
   'randboel': 'Vejle',
 };
-
 function normalizeVejr(vejr) {
   if (!vejr) return null;
   let v = String(vejr).trim();
@@ -44,15 +40,118 @@ function normalizeVejr(vejr) {
   return v.charAt(0).toUpperCase() + v.slice(1);
 }
 
-async function main() {
-  console.log('=== Import Sites fra Excel (Pladser linje 1–939) ===\n');
+// Hjælpefunktion: konverter rå celleværdi til streng eller null
+function str(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const s = String(v).trim();
+  return s === '' || s === '0' ? null : s;
+}
+// Tal eller null
+function num(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  return isNaN(n) ? null : n;
+}
 
-  // Load areas
+// Alle 74 kolonner fra arket — kolonneindeks → nøgle
+const COL_KEYS = [
+  'status',           // 0
+  'niveau',           // 1
+  'kunHverdage',      // 2
+  'vejrOmraade',      // 3
+  'pladsNavn',        // 4
+  'vaNrKunde',        // 5
+  'kunde',            // 6
+  'storkunde',        // 7
+  'gennemgaaet2025',  // 8
+  'kortOmraade',      // 9
+  'scribbelNr',       // 10
+  'adresse',          // 11
+  'postnr',           // 12
+  'by',               // 13
+  'ansvarlig1',       // 14
+  'ansvarlig2',       // 15
+  'afregningsmodel',  // 16
+  'timepris',         // 17
+  'ueTimepris',       // 18
+  'provision',        // 19
+  'agent',            // 20
+  'saltTillaeg',      // 21
+  'saltningInclSalt', // 22
+  'stroeUE',          // 23
+  'stroeAva',         // 24
+  'snerydningInclSaltning', // 25
+  'kombiUE',          // 26
+  'kombiAvance',      // 27
+  'prisOK',           // 28
+  'uePrisOk',         // 29
+  'stroePrM2',        // 30
+  'kombiPrM2',        // 31
+  'ueStroPrM2',       // 32
+  'ueKombiPrM2',      // 33
+  'fastprisSnevagten',// 34
+  'stroepris',        // 35
+  'kombipris',        // 36
+  'stroeture',        // 37
+  'sneture',          // 38
+  'egneBemaerkninger',// 39
+  'bemaerkninger',    // 40
+  'kodeNoegle',       // 41
+  'ejendomskontakt',  // 42
+  'kort',             // 43
+  'app',              // 44
+  'stroemiddel',      // 45
+  'pladsArealM2',     // 46
+  'stiLaengdeM',      // 47
+  'haandLaengdeM',    // 48
+  'ureaArealM2',      // 49
+  'arealIAlt',        // 50
+  'molokker',         // 51
+  'svalegange',       // 52
+  'trapper',          // 53
+  'saltforbrugV20g',  // 54
+  'ureaforbrugV20g',  // 55
+  'pladssalterRute',  // 56
+  'stiRute',          // 57
+  'haandRute',        // 58
+  'snetraktorrute',   // 59
+  'ekstraHoej',       // 60
+  'pladsTidSalt',     // 61
+  'stiTidSalt',       // 62
+  'haandTidSalt',     // 63
+  'pladsTidKombi',    // 64
+  'stiTidKombi',      // 65
+  'haandTidKombi',    // 66
+  'snetraktorTidKombi',// 67
+  'email',            // 68
+  'beregnetStroe',    // 69
+  'beregnetKombi',    // 70
+  'beregnetStroePrM2',// 71
+  'beregnetKombiPrM2',// 72
+  'snevagtkontrol',   // 73
+];
+
+function buildExcelData(row) {
+  const obj = {};
+  for (let i = 0; i < COL_KEYS.length; i++) {
+    const raw = row[i];
+    if (raw === null || raw === undefined || raw === '') continue;
+    const s = String(raw).trim();
+    if (s === '') continue;
+    // Forsøg at parse tal; ellers bevar som streng
+    const n = Number(raw);
+    obj[COL_KEYS[i]] = !isNaN(n) && raw !== '' ? n : s;
+  }
+  return obj;
+}
+
+async function main() {
+  console.log('=== Import Sites fra Excel (Pladser linje 1–939) med alle 74 kolonner ===\n');
+
   const { rows: dbAreas } = await pool.query('SELECT id, name FROM areas');
   const areaByName = new Map(dbAreas.map(a => [a.name.trim().toLowerCase(), a.id]));
   console.log(`DB areas: ${dbAreas.length}`);
 
-  // Parse Excel — STRICTLY linje 1–939
   console.log('Parsing Excel...');
   const wb = xlsx.readFile(
     path.join(ASSETS, 'UDKALDSARK_2025_2026macro1_1773836369486.xlsm'),
@@ -61,29 +160,19 @@ async function main() {
   const ws = wb.Sheets['Pladser'];
   const rawRows = xlsx.utils.sheet_to_json(ws, { header: 1, defval: '', range: 0 });
 
-  // Excel rows 1–939 = index 0–938
-  // Row 0 = kategori-headers (Udkaldskriterier, PladsGrunddata, ...)
-  // Row 1 = kolonne-headers (Status, Niveau, KunHverdage, Vejrområde, PladsNavn, ...)
-  // Rows 2–938 = datarækker (Excel linje 3–939)
-  const TABLE_END = 939; // eksklusiv (linje 939 = index 938 = inklusiv)
-  const tableRows = rawRows.slice(0, TABLE_END); // Index 0–938
-  const dataRows  = tableRows.slice(2);          // Data: index 2–938
+  const TABLE_END = 939;
+  const tableRows = rawRows.slice(0, TABLE_END);
+  const dataRows  = tableRows.slice(2);
 
   console.log(`Excel-ark total rækker: ${rawRows.length}`);
   console.log(`Tabelområde (linje 1–939): ${tableRows.length} rækker`);
   console.log(`Datarækker (linje 3–939): ${dataRows.length}`);
   console.log(`Rækker ignoreret efter linje 939: ${rawRows.length - TABLE_END}`);
 
-  // Column indices — from header row 1 (index 1)
-  const COL = {
-    status: 0, niveau: 1, dage: 2, vejr: 3, naam: 4,
-    vaKunde: 5, kunde: 6,
-    storkunde: 7, kortOmr: 9, scribbelNr: 10,
-    adresse: 11, postnr: 12, by: 13,
-    kode: 41, app: 44, stroe: 45,
-  };
+  const COL = { status:0, niveau:1, dage:2, vejr:3, naam:4, vaKunde:5, kunde:6,
+    storkunde:7, kortOmr:9, scribbelNr:10, adresse:11, postnr:12, by:13,
+    kode:41, app:44, stroe:45 };
 
-  // Count by status
   const statusCounts = {};
   for (const row of dataRows) {
     const s = String(row[COL.status] || '').trim() || '(blank)';
@@ -92,7 +181,7 @@ async function main() {
   console.log('\nStatus-fordeling i tabelområdet:');
   Object.entries(statusCounts).sort((a,b)=>b[1]-a[1]).forEach(([k,v]) => console.log(`  ${k}: ${v}`));
 
-  // Load existing sites by name (for upsert)
+  // Load eksisterende sites
   const { rows: existing } = await pool.query('SELECT id, name FROM sites');
   const byName = new Map(existing.map(s => [s.name.trim().toLowerCase(), s.id]));
   console.log(`\nEksisterende sites i DB: ${existing.length}`);
@@ -101,17 +190,16 @@ async function main() {
 
   for (const row of dataRows) {
     const naam = String(row[COL.naam] || '').trim();
-    // Skip rows without PladsNavn (should not exist per our analysis, but guard anyway)
     if (!naam || naam === 'PladsNavn') { skip++; continue; }
 
     const rawStatus   = String(row[COL.status] || '').trim();
     const active      = mapActive(rawStatus);
     const niveau      = mapNiveau(row[COL.niveau]);
     const dage        = mapDage(row[COL.dage]);
-    const adresse     = String(row[COL.adresse] || '').trim() || null;
-    const postnr      = row[COL.postnr] ? String(row[COL.postnr]).trim() : null;
-    const by          = String(row[COL.by] || '').trim() || null;
-    const storkunde   = String(row[COL.storkunde] || '').trim() || null;
+    const adresse     = str(row[COL.adresse]);
+    const postnr      = row[COL.postnr] ? String(row[COL.postnr]).trim() || null : null;
+    const by          = str(row[COL.by]);
+    const storkunde   = String(row[COL.storkunde] || '').trim();
     const storkundeVal = storkunde && storkunde !== '0' && storkunde !== 'Ingen' ? storkunde : null;
     const kode        = String(row[COL.kode] || '').trim();
     const kodeVal     = kode && kode !== '0' ? kode : null;
@@ -126,7 +214,6 @@ async function main() {
     const scribbelNr  = row[COL.scribbelNr] ? String(row[COL.scribbelNr]).trim() : null;
     const smapsIdVal  = scribbelNr && scribbelNr !== '0' ? scribbelNr : null;
 
-    // Resolve area — allowed to be NULL for inactive/udgår sites
     const vejr     = String(row[COL.vejr] || '').trim();
     const areaName = normalizeVejr(vejr);
     let areaId     = areaName ? areaByName.get(areaName.toLowerCase()) : null;
@@ -137,7 +224,9 @@ async function main() {
         if (ko.includes(name)) { areaId = id; break; }
       }
     }
-    // areaId may be null for sites that can't be resolved (they'll have active=false)
+
+    // Byg excel_data med ALLE 74 kolonner
+    const excelData = buildExcelData(row);
 
     const existId = byName.get(naam.toLowerCase());
 
@@ -149,19 +238,23 @@ async function main() {
           code_key=$8, ice_control=$9, app=$10, big_customer=$11,
           area_id=COALESCE($12, area_id),
           va_kunde=$13, kunde=$14, smaps_id=$15,
+          from_excel=true, excel_data=$16,
           updated_at=NOW()
-         WHERE id=$16`,
+         WHERE id=$17`,
         [adresse, postnr, by, niveau, dage, active, rawStatus || null,
          kodeVal, stroeVal, appVal, storkundeVal,
-         areaId || null, vaKundeVal, kundeVal, smapsIdVal, existId]
+         areaId || null, vaKundeVal, kundeVal, smapsIdVal,
+         JSON.stringify(excelData), existId]
       );
       upd++;
     } else {
       const { rows: [r] } = await pool.query(
-        `INSERT INTO sites(id,area_id,name,address,postal_code,city,level,day_rule,active,excel_status,code_key,ice_control,app,big_customer,va_kunde,kunde,smaps_id,created_at,updated_at)
-         VALUES(gen_random_uuid(),$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,NOW(),NOW()) RETURNING id`,
+        `INSERT INTO sites(id,area_id,name,address,postal_code,city,level,day_rule,active,excel_status,
+          code_key,ice_control,app,big_customer,va_kunde,kunde,smaps_id,from_excel,excel_data,created_at,updated_at)
+         VALUES(gen_random_uuid(),$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,true,$17,NOW(),NOW()) RETURNING id`,
         [areaId || null, naam, adresse, postnr, by, niveau, dage, active, rawStatus || null,
-         kodeVal, stroeVal, appVal, storkundeVal, vaKundeVal, kundeVal, smapsIdVal]
+         kodeVal, stroeVal, appVal, storkundeVal, vaKundeVal, kundeVal, smapsIdVal,
+         JSON.stringify(excelData)]
       );
       byName.set(naam.toLowerCase(), r.id);
       ins++;
@@ -171,17 +264,21 @@ async function main() {
   console.log(`\nResultat: inserted=${ins}  updated=${upd}  skipped=${skip}`);
   console.log(`Total importerede rækker: ${ins + upd}`);
 
-  // Final report
-  const [tot, byStatus, byLvl, missingArea] = await Promise.all([
+  const [tot, byStatus, byLvl, missingArea, fromExcelCount, notFromExcel] = await Promise.all([
     pool.query('SELECT COUNT(*) cnt FROM sites'),
-    pool.query(`SELECT excel_status, COUNT(*) cnt FROM sites GROUP BY excel_status ORDER BY cnt DESC`),
-    pool.query(`SELECT level, COUNT(*) cnt FROM sites GROUP BY level ORDER BY cnt DESC`),
-    pool.query(`SELECT COUNT(*) cnt FROM sites WHERE area_id IS NULL`),
+    pool.query(`SELECT excel_status, COUNT(*) cnt FROM sites WHERE from_excel=true GROUP BY excel_status ORDER BY cnt DESC`),
+    pool.query(`SELECT level, COUNT(*) cnt FROM sites WHERE from_excel=true GROUP BY level ORDER BY cnt DESC`),
+    pool.query(`SELECT COUNT(*) cnt FROM sites WHERE area_id IS NULL AND from_excel=true`),
+    pool.query(`SELECT COUNT(*) cnt FROM sites WHERE from_excel=true`),
+    pool.query(`SELECT id, name, level FROM sites WHERE from_excel=false ORDER BY name`),
   ]);
 
   console.log(`\nTotal sites i DB: ${tot.rows[0].cnt}`);
-  console.log(`Sites uden område (area_id IS NULL): ${missingArea.rows[0].cnt}`);
-  console.log('Status-fordeling i DB:');
+  console.log(`Sites fra Excel (from_excel=true): ${fromExcelCount.rows[0].cnt}`);
+  console.log(`Sites IKKE fra Excel (from_excel=false): ${notFromExcel.rows.length}`);
+  notFromExcel.rows.forEach(r => console.log(`  - ${r.name} (${r.level})`));
+  console.log(`Excel-sites uden område (area_id IS NULL): ${missingArea.rows[0].cnt}`);
+  console.log('\nStatus-fordeling (kun Excel-sites):');
   byStatus.rows.forEach(r => console.log(`  ${r.excel_status || '(blank)'}: ${r.cnt}`));
   console.log('Niveau-fordeling:', byLvl.rows.map(r => `${r.level}:${r.cnt}`).join(', '));
 

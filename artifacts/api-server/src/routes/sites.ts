@@ -30,12 +30,12 @@ router.get("/sites", async (req, res): Promise<void> => {
   res.json(ListSitesResponse.parse(rows));
 });
 
-// Admin endpoint — all sites with areaName, hasMarker, geometryCount (no active filter)
+// Admin endpoint — only from_excel=true sites with areaName, hasMarker, geometryCount
 router.get("/sites/admin", async (req, res): Promise<void> => {
   const { areaId, active, search } = req.query as Record<string, string | undefined>;
 
   const [allSites, allAreas, markerRows, geoRows] = await Promise.all([
-    db.select().from(sitesTable).orderBy(sitesTable.name),
+    db.select().from(sitesTable).where(eq(sitesTable.fromExcel, true)).orderBy(sitesTable.name),
     db.select({ id: areasTable.id, name: areasTable.name }).from(areasTable),
     db.select({ siteId: siteMarkersTable.siteId }).from(siteMarkersTable),
     db

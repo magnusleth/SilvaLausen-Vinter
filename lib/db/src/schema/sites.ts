@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, uuid, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, uuid, boolean, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { areasTable } from "./areas";
@@ -41,6 +41,8 @@ export const sitesTable = pgTable("sites", {
   smapsId: text("smaps_id"),
   vaKunde: text("va_kunde"),
   kunde: text("kunde"),
+  fromExcel: boolean("from_excel").notNull().default(false),
+  excelData: jsonb("excel_data"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

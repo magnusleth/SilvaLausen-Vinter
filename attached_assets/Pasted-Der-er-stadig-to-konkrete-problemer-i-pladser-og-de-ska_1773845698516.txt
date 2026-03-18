@@ -1,0 +1,80 @@
+Der er stadig to konkrete problemer i /pladser, og de skal rettes nu.
+
+PROBLEM 1:
+Jeg kan se rækker i /pladser som ikke ser ud til at komme fra hovedarket "Pladser" i UDKALDSARK 2025 2026.
+Ud fra din egen rapport:
+- 937 rækker er importeret fra tabelområdet linje 1–939
+- men databasen har 955 sites
+- forskellen er 18
+- du har selv angivet "(blank fra CSV-import) 18"
+
+Det betyder, at /pladser stadig indeholder gamle eller fremmede sites fra tidligere CSV-/GeoJSON-importer.
+
+PROBLEM 2:
+ /pladser har stadig ikke alle kolonner med fra arket "Pladser".
+Jeg vil have, at /pladser afspejler hele hovedarket "Pladser" fra Excel-tabellen, ikke kun et udvalg af felter.
+
+VIGTIGT:
+Arket "Pladser" i UDKALDSARK 2025 2026 er source of truth.
+Kun tabelområdet linje 1–939 må bruges.
+Alt under linje 939 skal ignoreres fuldstændigt.
+
+KRAV:
+1. /pladser må kun vise rækker fra hovedarket "Pladser"
+2. /pladser skal have alle kolonner fra arket "Pladser" med
+3. PladsNavn skal altid komme direkte fra Excel-kolonnen "PladsNavn"
+4. Ingen gamle CSV-/GeoJSON-sites må stå som almindelige pladser i /pladser
+5. Hvis ikke alle kolonner egner sig som faste databasekolonner, må de gemmes i raw_data/excel_payload — men de skal stadig kunne vises i UI
+
+OPGAVE:
+
+1. Genanalysér arket "Pladser"
+- brug kun linje 1–939
+- brug header fra selve tabellen
+- lav en komplet liste over ALLE kolonnenavne i arket "Pladser"
+- bekræft hvilke der allerede er gemt som rigtige kolonner
+- bekræft hvilke der evt. kun findes i raw_data/excel_payload
+
+2. Identificér de 18 ekstra sites som ikke stammer fra hovedarket
+- vis:
+  - id
+  - pladsnavn
+  - status
+  - kilde hvis kendt
+  - hvorfor de stadig findes
+- sørg for at de ikke længere vises i /pladser
+
+3. Opdater datamodellen eller mappingen hvis nødvendigt
+- så alle kolonner fra hovedarket bevares
+- kernefelter må gerne være rigtige kolonner
+- resten må gerne gemmes i raw_data/excel_payload
+- men intet fra hovedarket må gå tabt
+
+4. Opdater /pladser
+/pladser skal nu være en ægte administrationsvisning af hele hovedarket.
+
+Krav til UI:
+- vis alle kolonner fra hovedarket
+- hvis der er for mange til én tabelbredde, så brug horisontal scroll
+- bevar søgning, filtrering og sortering
+- bevar statusfilter
+- bevar aktiv/inaktiv-logik
+- men ingen kolonner fra hovedarket må mangle
+
+5. Opdater /pladser/:id
+- vis alle felter fra hovedarket for den valgte plads
+- både kernefelter og evt. raw_data/excel_payload felter
+- så man kan se hele posten, ikke kun et udvalg
+
+6. Bekræft source of truth-reglen
+- /pladser må kun vise sites fra hovedarket "Pladser"
+- driftssider (/kort, /udkald/:id, /live/:calloutId) må stadig være filtrerede
+
+NÅR DU ER FÆRDIG, LEVER:
+A. komplet liste over kolonner i arket "Pladser"
+B. hvilke felter der er gemt som rigtige kolonner
+C. hvilke felter der er gemt i raw_data/excel_payload
+D. listen over de 18 ekstra sites
+E. hvad du gjorde med dem
+F. nyt totalantal i /pladser
+G. bekræftelse af at /pladser nu kun viser hovedarket og alle dets kolonner

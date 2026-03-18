@@ -31,6 +31,8 @@ const NIVEAU_LABELS: Record<string, { label: string; color: string }> = {
   basis: { label: "BASIS", color: "text-zinc-400 bg-zinc-600/10 border-zinc-600/30" },
 };
 
+type ExcelData = Record<string, string | number | null | undefined>;
+
 type Site = {
   id: string;
   name: string;
@@ -53,6 +55,7 @@ type Site = {
   areaName: string;
   geometryCount: number;
   markers: { lat: number; lng: number; label: string | null }[];
+  excelData: ExcelData | null;
 };
 
 function InfoRow({ label, value, mono }: { label: string; value: string | null | undefined; mono?: boolean }) {
@@ -65,6 +68,38 @@ function InfoRow({ label, value, mono }: { label: string; value: string | null |
     </div>
   );
 }
+
+function xdStr(ed: ExcelData | null | undefined, key: string): string | null {
+  if (!ed) return null;
+  const v = ed[key];
+  if (v === null || v === undefined || v === "") return null;
+  return String(v);
+}
+
+function ExcelSection({
+  title,
+  icon,
+  fields,
+}: {
+  title: string;
+  icon?: React.ReactNode;
+  fields: { label: string; value: string | null; mono?: boolean }[];
+}) {
+  const hasData = fields.some(f => f.value !== null);
+  if (!hasData) return null;
+  return (
+    <section className="bg-card border rounded-2xl p-5">
+      <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4 flex items-center gap-2">
+        {icon} {title}
+      </h2>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-4">
+        {fields.map(f => <InfoRow key={f.label} label={f.label} value={f.value} mono={f.mono} />)}
+      </div>
+    </section>
+  );
+}
+
+import React from "react";
 
 function MiniMap({ lat, lng, name }: { lat: number; lng: number; name: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -198,48 +233,186 @@ export default function PladsVisPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left column: data */}
         <div className="lg:col-span-2 space-y-5">
-          {/* Stamdata */}
+          {/* Stamdata / PladsGrunddata */}
           <section className="bg-card border rounded-2xl p-5">
             <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4 flex items-center gap-2">
-              <Building2 className="w-3.5 h-3.5" /> Stamdata
+              <Building2 className="w-3.5 h-3.5" /> PladsGrunddata
             </h2>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-4">
-              <InfoRow label="Pladsnavn" value={site.name} />
+              <InfoRow label="PladsNavn" value={site.name} />
+              <InfoRow label="VaNrKunde" value={site.vaKunde} mono />
+              <InfoRow label="Kunde" value={site.kunde} />
+              <InfoRow label="Storkunde" value={site.bigCustomer} />
+              <InfoRow label="gennemgået 2025" value={xdStr(site.excelData, "gennemgaaet2025")} />
+              <InfoRow label="KortOmråde" value={xdStr(site.excelData, "kortOmraade")} />
+              <InfoRow label="ScribbelNr" value={site.smapsId} mono />
               <InfoRow label="Adresse" value={site.address} />
               <InfoRow label="Postnr" value={site.postalCode} />
               <InfoRow label="By" value={site.city} />
-              <InfoRow label="Vejrområde" value={site.areaName} />
-              <InfoRow label="Dage" value={site.dayRule === "hverdage" ? "Kun hverdage" : "Alle dage"} />
             </div>
           </section>
 
-          {/* Kunde */}
+          {/* Udkaldskriterier */}
           <section className="bg-card border rounded-2xl p-5">
             <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4 flex items-center gap-2">
-              <Phone className="w-3.5 h-3.5" /> Kunde
-            </h2>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-4">
-              <InfoRow label="Kundenavn" value={site.kunde} />
-              <InfoRow label="VA-Nr (Kunde)" value={site.vaKunde} mono />
-              <InfoRow label="Storkunde" value={site.bigCustomer} />
-            </div>
-          </section>
-
-          {/* Drift & Udkald */}
-          <section className="bg-card border rounded-2xl p-5">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4 flex items-center gap-2">
-              <Star className="w-3.5 h-3.5" /> Drift & Udkald
+              <Star className="w-3.5 h-3.5" /> Udkaldskriterier
             </h2>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-4">
               <InfoRow label="Niveau" value={niveau.label} />
-              <InfoRow label="KodeNøgle" value={site.codeKey} mono />
-              <InfoRow label="Strømiddel" value={site.iceControl} />
-              <InfoRow label="App" value={site.app} />
-              <InfoRow label="ScribbelNr" value={site.smapsId} mono />
+              <InfoRow label="KunHverdage" value={site.dayRule === "hverdage" ? "KunHverdage" : "Alle dage"} />
+              <InfoRow label="Vejrområde" value={site.areaName} />
             </div>
           </section>
 
-          {/* Geometri & Markør status */}
+          {/* Drift */}
+          <section className="bg-card border rounded-2xl p-5">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4 flex items-center gap-2">
+              <Tag className="w-3.5 h-3.5" /> Drift
+            </h2>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-4">
+              <InfoRow label="KodeNøgle" value={site.codeKey} mono />
+              <InfoRow label="App" value={site.app} />
+              <InfoRow label="Strømiddel" value={site.iceControl} />
+              <InfoRow label="Kort" value={xdStr(site.excelData, "kort")} />
+              <InfoRow label="Ejendomskontakt" value={xdStr(site.excelData, "ejendomskontakt")} />
+            </div>
+          </section>
+
+          {/* Kontakt & Kontrakt */}
+          <ExcelSection
+            title="Kontakt & Kontrakt"
+            icon={<Phone className="w-3.5 h-3.5" />}
+            fields={[
+              { label: "Ansvarlig1", value: xdStr(site.excelData, "ansvarlig1") },
+              { label: "Ansvarlig2", value: xdStr(site.excelData, "ansvarlig2") },
+              { label: "Afregningsmodel", value: xdStr(site.excelData, "afregningsmodel") },
+              { label: "email", value: xdStr(site.excelData, "email") },
+              { label: "Agent", value: xdStr(site.excelData, "agent") },
+            ]}
+          />
+
+          {/* Priser */}
+          <ExcelSection
+            title="Priser"
+            icon={<Hash className="w-3.5 h-3.5" />}
+            fields={[
+              { label: "Timepris", value: xdStr(site.excelData, "timepris") },
+              { label: "UeTimepris", value: xdStr(site.excelData, "ueTimepris") },
+              { label: "Provision", value: xdStr(site.excelData, "provision") },
+              { label: "SaltTillæg", value: xdStr(site.excelData, "saltTillaeg") },
+              { label: "Saltning incl salt", value: xdStr(site.excelData, "saltningInclSalt") },
+              { label: "strø UE", value: xdStr(site.excelData, "stroeUE") },
+              { label: "Strø ava", value: xdStr(site.excelData, "stroeAva") },
+              { label: "Snerydning incl saltning", value: xdStr(site.excelData, "snerydningInclSaltning") },
+              { label: "Kombi UE", value: xdStr(site.excelData, "kombiUE") },
+              { label: "KombiAvance", value: xdStr(site.excelData, "kombiAvance") },
+              { label: "Pris OK", value: xdStr(site.excelData, "prisOK") },
+              { label: "UE pris ok", value: xdStr(site.excelData, "uePrisOk") },
+              { label: "STRØ pr m2", value: xdStr(site.excelData, "stroePrM2") },
+              { label: "KOMBI pr m2", value: xdStr(site.excelData, "kombiPrM2") },
+              { label: "Ue strø pr m2", value: xdStr(site.excelData, "ueStroPrM2") },
+              { label: "Ue kombi pr m2", value: xdStr(site.excelData, "ueKombiPrM2") },
+              { label: "Fastpris snevagten", value: xdStr(site.excelData, "fastprisSnevagten") },
+              { label: "Strøpris", value: xdStr(site.excelData, "stroepris") },
+              { label: "kombipris", value: xdStr(site.excelData, "kombipris") },
+              { label: "Strøture", value: xdStr(site.excelData, "stroeture") },
+              { label: "Sneture", value: xdStr(site.excelData, "sneture") },
+            ]}
+          />
+
+          {/* Arealer & Forhindringer */}
+          <ExcelSection
+            title="Arealer & Forhindringer"
+            icon={<Layers className="w-3.5 h-3.5" />}
+            fields={[
+              { label: "PladsArealM2", value: xdStr(site.excelData, "pladsArealM2") },
+              { label: "StiLængdeM", value: xdStr(site.excelData, "stiLaengdeM") },
+              { label: "HåndLængdeM", value: xdStr(site.excelData, "haandLaengdeM") },
+              { label: "UreaArealM2", value: xdStr(site.excelData, "ureaArealM2") },
+              { label: "Areal i alt", value: xdStr(site.excelData, "arealIAlt") },
+              { label: "Molokker", value: xdStr(site.excelData, "molokker") },
+              { label: "Svalegange", value: xdStr(site.excelData, "svalegange") },
+              { label: "Trapper", value: xdStr(site.excelData, "trapper") },
+            ]}
+          />
+
+          {/* Forbrug */}
+          <ExcelSection
+            title="Strømiddelforbrug"
+            icon={<Calendar className="w-3.5 h-3.5" />}
+            fields={[
+              { label: "SaltforbrugV20g", value: xdStr(site.excelData, "saltforbrugV20g") },
+              { label: "UreaforbrugV20g", value: xdStr(site.excelData, "ureaforbrugV20g") },
+            ]}
+          />
+
+          {/* Ruter */}
+          <ExcelSection
+            title="Ruter"
+            icon={<MapPin className="w-3.5 h-3.5" />}
+            fields={[
+              { label: "PladssalterRute", value: xdStr(site.excelData, "pladssalterRute") },
+              { label: "StiRute", value: xdStr(site.excelData, "stiRute") },
+              { label: "HåndRute", value: xdStr(site.excelData, "haandRute") },
+              { label: "Snetraktorrute", value: xdStr(site.excelData, "snetraktorrute") },
+              { label: "Ekstra høj", value: xdStr(site.excelData, "ekstraHoej") },
+            ]}
+          />
+
+          {/* Tider */}
+          <ExcelSection
+            title="Tider"
+            icon={<Hash className="w-3.5 h-3.5" />}
+            fields={[
+              { label: "PladsTidSalt", value: xdStr(site.excelData, "pladsTidSalt") },
+              { label: "StiTidSalt", value: xdStr(site.excelData, "stiTidSalt") },
+              { label: "HåndTidSalt", value: xdStr(site.excelData, "haandTidSalt") },
+              { label: "PladsTidKombi", value: xdStr(site.excelData, "pladsTidKombi") },
+              { label: "StiTidKombi", value: xdStr(site.excelData, "stiTidKombi") },
+              { label: "HåndTidKombi", value: xdStr(site.excelData, "haandTidKombi") },
+              { label: "SneTraktorTidKombi", value: xdStr(site.excelData, "snetraktorTidKombi") },
+            ]}
+          />
+
+          {/* Beregnet */}
+          <ExcelSection
+            title="Beregnet"
+            icon={<Hash className="w-3.5 h-3.5" />}
+            fields={[
+              { label: "BeregnetStrø", value: xdStr(site.excelData, "beregnetStroe") },
+              { label: "BeregnetKombi", value: xdStr(site.excelData, "beregnetKombi") },
+              { label: "Beregnet strø/m2", value: xdStr(site.excelData, "beregnetStroePrM2") },
+              { label: "Beregnet kombi/m2", value: xdStr(site.excelData, "beregnetKombiPrM2") },
+              { label: "Snevagt kontrol", value: xdStr(site.excelData, "snevagtkontrol") },
+            ]}
+          />
+
+          {/* Bemærkninger */}
+          {(site.notes || xdStr(site.excelData, "egneBemaerkninger") || xdStr(site.excelData, "bemaerkninger")) && (
+            <section className="bg-card border rounded-2xl p-5">
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Bemærkninger</h2>
+              {xdStr(site.excelData, "egneBemaerkninger") && (
+                <div className="mb-3">
+                  <p className="text-xs text-muted-foreground mb-1">Egne bemærkninger</p>
+                  <p className="text-sm text-foreground whitespace-pre-wrap">{xdStr(site.excelData, "egneBemaerkninger")}</p>
+                </div>
+              )}
+              {xdStr(site.excelData, "bemaerkninger") && (
+                <div className="mb-3">
+                  <p className="text-xs text-muted-foreground mb-1">Bemærkninger</p>
+                  <p className="text-sm text-foreground whitespace-pre-wrap">{xdStr(site.excelData, "bemaerkninger")}</p>
+                </div>
+              )}
+              {site.notes && (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Interne noter</p>
+                  <p className="text-sm text-foreground whitespace-pre-wrap">{site.notes}</p>
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* Geodata */}
           <section className="bg-card border rounded-2xl p-5">
             <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4 flex items-center gap-2">
               <Layers className="w-3.5 h-3.5" /> Geodata
@@ -266,19 +439,11 @@ export default function PladsVisPage() {
               <div className="flex flex-col gap-1">
                 <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Status</span>
                 <span className={`text-sm font-medium ${site.active ? "text-green-400" : "text-muted-foreground/50"}`}>
-                  {site.active ? "Aktiv" : "Inaktiv"}
+                  {site.active ? "Aktiv i drift" : "Ikke i drift"}
                 </span>
               </div>
             </div>
           </section>
-
-          {/* Bemærkninger */}
-          {site.notes && (
-            <section className="bg-card border rounded-2xl p-5">
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Bemærkninger</h2>
-              <p className="text-sm text-foreground whitespace-pre-wrap">{site.notes}</p>
-            </section>
-          )}
         </div>
 
         {/* Right column: mini map */}
