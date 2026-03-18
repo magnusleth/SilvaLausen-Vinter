@@ -45,8 +45,20 @@ type PopupState =
   | { type: "site"; site: SiteMarker; lng: number; lat: number }
   | { type: "cluster"; sites: SiteMarker[]; lng: number; lat: number };
 
+interface TooltipState {
+  x: number;
+  y: number;
+  count: number;
+  vip: number;
+  hoj: number;
+  lav: number;
+  basis: number;
+}
+
 export default function KortPage() {
   const mapRef = useRef<MapRef>(null);
+  // Ref so onMouseMove callback is stable (no re-creation on every hover)
+  const hoveredFeatureIdRef = useRef<number | string | null>(null);
 
   const [selectedLevels, setSelectedLevels] = useState<Set<string>>(new Set());
   const [selectedArea, setSelectedArea] = useState<string | null>(null);
@@ -57,6 +69,7 @@ export default function KortPage() {
   const [geoExpanded, setGeoExpanded] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
   const [cursor, setCursor] = useState("grab");
+  const [tooltip, setTooltip] = useState<TooltipState | null>(null);
 
   const params = new URLSearchParams();
   if (selectedArea) params.set("areaId", selectedArea);
@@ -100,7 +113,7 @@ export default function KortPage() {
     return sites.filter(s => selectedLevels.has(s.level));
   }, [sites, selectedLevels]);
 
-  // GeoJSON for native Mapbox clustering
+  // GeoJSON with all site props as feature properties
   const sitesGeoJson = useMemo((): GeoJSON.FeatureCollection => ({
     type: "FeatureCollection",
     features: filteredSites.map(s => ({
@@ -175,7 +188,7 @@ export default function KortPage() {
     },
   };
 
-  // Cluster circles — size scales with count
+  // Cluster circles — hover state changes size and color via feature-state
   const clusterCircleLayer: CircleLayer = {
     id: "clusters",
     type: "circle",
@@ -183,12 +196,20 @@ export default function KortPage() {
     filter: ["has", "point_count"],
     paint: {
       "circle-color": [
-        "step", ["get", "point_count"],
-        "#64748b", 10, "#475569", 30, "#334155",
+        "case",
+        ["boolean", ["feature-state", "hover"], false],
+        // hovered: darker shade
+        ["step", ["get", "point_count"], "#475569", 10, "#334155", 30, "#1e293b"],
+        // normal
+        ["step", ["get", "point_count"], "#64748b", 10, "#475569", 30, "#334155"],
       ],
       "circle-radius": [
-        "step", ["get", "point_count"],
-        16, 10, 20, 30, 24,
+        "case",
+        ["boolean", ["feature-state", "hover"], false],
+        // hovered: 3px larger
+        ["step", ["get", "point_count"], 19, 10, 23, 30, 27],
+        // normal
+        ["step", ["get", "point_count"], 16, 10, 20, 30, 24],
       ],
       "circle-stroke-width": 2.5,
       "circle-stroke-color": "#ffffff",
@@ -232,7 +253,19 @@ export default function KortPage() {
     },
   };
 
-  // ── Interaction handlers ────────────────────────────────────────────────────
+  // ── Helpers ─────────────────────────────────────────────────────────────────
+
+  function clearHoverState(mapInstance: ReturnType<MapRef["getMap"]>) {
+    if (hoveredFeatureIdRef.current !== null) {
+      mapInstance.setFeatureState(
+        { source: "sites", id: hoveredFeatureIdRef.current },
+        { hover: false }
+      );
+      hoveredFeatureIdRef.current = null;
+    }
+  }
+
+  // ── Click handler ────────────────────────────────────────────────────────────
 
   const handleMapClick = useCallback((e: MapLayerMouseEvent) => {
     const features = e.features;
@@ -246,20 +279,21 @@ export default function KortPage() {
     const [lng, lat] = coords;
 
     if (feature.properties?.cluster) {
-      // It's a cluster bubble — try to expand it
       const clusterId = feature.properties.cluster_id as number;
       const mapInstance = mapRef.current?.getMap();
       if (!mapInstance) return;
       const source = mapInstance.getSource("sites") as any;
       if (!source) return;
 
-      source.getClusterExpansionZoom(clusterId, (err: unknown, zoom: number) => {
+      // Step 1: find expansion zoom
+      source.getClusterExpansionZoom(clusterId, (err: unknown, expansionZoom: number) => {
         if (err) return;
-        if (zoom > 17) {
-          // Points overlap so tightly they won't split — show list popup
+
+        if (expansionZoom > 17) {
+          // Points won't separate → show list popup
           source.getClusterLeaves(clusterId, 100, 0, (err2: unknown, leaves: GeoJSON.Feature[]) => {
             if (err2 || !leaves) return;
-            const clusterSites = leaves
+            const clusterSites = (leaves as GeoJSON.Feature[])
               .map(f => f.properties as SiteMarker)
               .filter(Boolean)
               .sort((a, b) => {
@@ -269,8 +303,36 @@ export default function KortPage() {
             setPopupState({ type: "cluster", sites: clusterSites, lng, lat });
           });
         } else {
-          setPopupState(null);
-          mapInstance.easeTo({ center: [lng, lat], zoom, duration: 400 });
+          // Step 2: fetch all leaves to compute actual bounding box
+          source.getClusterLeaves(clusterId, 500, 0, (err2: unknown, leaves: GeoJSON.Feature[]) => {
+            setPopupState(null);
+            if (err2 || !leaves?.length) {
+              mapInstance.easeTo({ center: [lng, lat], zoom: expansionZoom, duration: 500 });
+              return;
+            }
+            const lngs = (leaves as GeoJSON.Feature[]).map(
+              f => ((f.geometry as GeoJSON.Point).coordinates)[0]
+            );
+            const lats = (leaves as GeoJSON.Feature[]).map(
+              f => ((f.geometry as GeoJSON.Point).coordinates)[1]
+            );
+            const dx = Math.max(...lngs) - Math.min(...lngs);
+            const dy = Math.max(...lats) - Math.min(...lats);
+
+            if (dx < 0.0005 && dy < 0.0005) {
+              // Points are essentially at the same spot — just zoom there
+              mapInstance.easeTo({ center: [lng, lat], zoom: expansionZoom, duration: 400 });
+            } else {
+              // Fit to the actual geographic bounds of the cluster's leaves
+              mapInstance.fitBounds(
+                [
+                  [Math.min(...lngs), Math.min(...lats)],
+                  [Math.max(...lngs), Math.max(...lats)],
+                ],
+                { padding: 80, maxZoom: expansionZoom, duration: 600 }
+              );
+            }
+          });
         }
       });
     } else {
@@ -291,8 +353,49 @@ export default function KortPage() {
     }
   }, []);
 
-  const handleMouseEnter = useCallback(() => setCursor("pointer"), []);
-  const handleMouseLeave = useCallback(() => setCursor("grab"), []);
+  // ── Mouse move: hover state + tooltip ────────────────────────────────────────
+
+  const handleMouseMove = useCallback((e: MapLayerMouseEvent) => {
+    const mapInstance = mapRef.current?.getMap();
+    if (!mapInstance) return;
+
+    const clusterFeature = e.features?.find(f => f.properties?.cluster);
+
+    if (clusterFeature) {
+      const featureId = clusterFeature.id as number | string;
+      const p = clusterFeature.properties!;
+
+      // Update feature hover state only when it changes
+      if (hoveredFeatureIdRef.current !== featureId) {
+        clearHoverState(mapInstance);
+        mapInstance.setFeatureState({ source: "sites", id: featureId }, { hover: true });
+        hoveredFeatureIdRef.current = featureId;
+      }
+
+      // Show tooltip — level counts come from clusterProperties (pre-aggregated, zero async)
+      setTooltip({
+        x: e.point.x,
+        y: e.point.y,
+        count: p.point_count as number,
+        vip: (p.vip_count as number) ?? 0,
+        hoj: (p.hoj_count as number) ?? 0,
+        lav: (p.lav_count as number) ?? 0,
+        basis: (p.basis_count as number) ?? 0,
+      });
+      setCursor("pointer");
+    } else {
+      clearHoverState(mapInstance);
+      setTooltip(null);
+      setCursor(e.features?.length ? "pointer" : "grab");
+    }
+  }, []); // stable — uses ref, not state
+
+  const handleMapMouseLeave = useCallback(() => {
+    const mapInstance = mapRef.current?.getMap();
+    if (mapInstance) clearHoverState(mapInstance);
+    setTooltip(null);
+    setCursor("grab");
+  }, []);
 
   const toggleLevel = (lvl: string) => {
     setSelectedLevels(prev => {
@@ -451,7 +554,7 @@ export default function KortPage() {
         </div>
       </div>
 
-      {/* Map */}
+      {/* Map area */}
       <div className="flex-1 h-full relative">
         {!MAPBOX_TOKEN ? (
           <MapFallback
@@ -466,137 +569,209 @@ export default function KortPage() {
         ) : mapError ? (
           <WebGLError message={mapError} />
         ) : (
-          <Map
-            ref={mapRef}
-            initialViewState={{ longitude: 9.5, latitude: 56.3, zoom: 7 }}
-            mapStyle="mapbox://styles/mapbox/light-v11"
-            mapboxAccessToken={MAPBOX_TOKEN}
-            style={{ width: "100%", height: "100%" }}
-            cursor={cursor}
-            interactiveLayerIds={["clusters", "unclustered-point"]}
-            onClick={handleMapClick}
-            onMouseEnter={handleMouseEnter}
-            onMouseLeave={handleMouseLeave}
-            onError={e => {
-              console.error("[VinterDrift/kort] Map error:", e.error);
-              setMapError(e.error?.message ?? "Kortfejl");
-            }}
-          >
-            <NavigationControl position="bottom-right" />
-
-            {/* Area polygons */}
-            {showAreas && (
-              <Source id="areas" type="geojson" data={areasGeoJson}>
-                <Layer {...areaFillLayer} />
-                <Layer {...areaOutlineLayer} />
-              </Source>
-            )}
-
-            {/* Site geometries (lines/polygons) */}
-            {showGeo && siteGeo && (
-              <Source id="site-geo" type="geojson" data={siteGeo}>
-                <Layer {...geoFillLayer} />
-                <Layer {...geoLineLayer} />
-              </Source>
-            )}
-
-            {/* Clustered site markers */}
-            <Source
-              id="sites"
-              type="geojson"
-              data={sitesGeoJson}
-              cluster={true}
-              clusterMaxZoom={17}
-              clusterRadius={40}
+          <>
+            <Map
+              ref={mapRef}
+              initialViewState={{ longitude: 9.5, latitude: 56.3, zoom: 7 }}
+              mapStyle="mapbox://styles/mapbox/light-v11"
+              mapboxAccessToken={MAPBOX_TOKEN}
+              style={{ width: "100%", height: "100%" }}
+              cursor={cursor}
+              interactiveLayerIds={["clusters", "unclustered-point"]}
+              onClick={handleMapClick}
+              onMouseMove={handleMouseMove}
+              onMouseLeave={handleMapMouseLeave}
+              onError={e => {
+                console.error("[VinterDrift/kort] Map error:", e.error);
+                setMapError(e.error?.message ?? "Kortfejl");
+              }}
             >
-              <Layer {...clusterCircleLayer} />
-              <Layer {...clusterCountLayer} />
-              <Layer {...unclusteredPointLayer} />
-            </Source>
+              <NavigationControl position="bottom-right" />
 
-            {/* Popup — single site */}
-            {popupState?.type === "site" && (
-              <Popup
-                anchor="bottom"
-                longitude={popupState.lng}
-                latitude={popupState.lat}
-                onClose={() => setPopupState(null)}
-                closeButton
-                closeOnClick={false}
-                offset={12}
-                maxWidth="260px"
-              >
-                <div className="p-1.5 min-w-[200px]">
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <div
-                      className="w-2.5 h-2.5 rounded-full shrink-0"
-                      style={{ backgroundColor: LEVEL_HEX[popupState.site.level] }}
-                    />
-                    <span className="font-bold text-sm">{LEVEL_LABEL[popupState.site.level]}</span>
-                  </div>
-                  <h3 className="font-semibold text-sm leading-tight mb-1">{popupState.site.name}</h3>
-                  {popupState.site.address && (
-                    <p className="text-xs text-muted-foreground mb-1.5">{popupState.site.address}</p>
-                  )}
-                  <div className="flex items-center gap-1 flex-wrap">
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-muted">
-                      {popupState.site.dayRule === "altid" ? "Alle dage" : "Kun hverdage"}
-                    </span>
-                    <span className={clsx(
-                      "px-1.5 py-0.5 rounded text-[10px] font-semibold",
-                      popupState.site.active ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
-                    )}>
-                      {popupState.site.active ? "Aktiv" : "Inaktiv"}
-                    </span>
-                  </div>
-                </div>
-              </Popup>
-            )}
+              {/* Area polygons */}
+              {showAreas && (
+                <Source id="areas" type="geojson" data={areasGeoJson}>
+                  <Layer {...areaFillLayer} />
+                  <Layer {...areaOutlineLayer} />
+                </Source>
+              )}
 
-            {/* Popup — overlapping cluster (same coordinates) */}
-            {popupState?.type === "cluster" && (
-              <Popup
-                anchor="bottom"
-                longitude={popupState.lng}
-                latitude={popupState.lat}
-                onClose={() => setPopupState(null)}
-                closeButton
-                closeOnClick={false}
-                offset={12}
-                maxWidth="280px"
+              {/* Site geometries (lines/polygons) */}
+              {showGeo && siteGeo && (
+                <Source id="site-geo" type="geojson" data={siteGeo}>
+                  <Layer {...geoFillLayer} />
+                  <Layer {...geoLineLayer} />
+                </Source>
+              )}
+
+              {/* Clustered site markers
+                  generateId: gives each feature a stable numeric id for setFeatureState
+                  clusterProperties: pre-aggregates level counts into each cluster feature
+                    → tooltip gets vip/hoj/lav/basis counts with zero async work        */}
+              <Source
+                id="sites"
+                type="geojson"
+                data={sitesGeoJson}
+                cluster={true}
+                clusterMaxZoom={17}
+                clusterRadius={40}
+                generateId={true}
+                clusterProperties={{
+                  vip_count:   ["+", ["case", ["==", ["get", "level"], "vip"],   1, 0]],
+                  hoj_count:   ["+", ["case", ["==", ["get", "level"], "hoj"],   1, 0]],
+                  lav_count:   ["+", ["case", ["==", ["get", "level"], "lav"],   1, 0]],
+                  basis_count: ["+", ["case", ["==", ["get", "level"], "basis"], 1, 0]],
+                }}
               >
-                <div className="p-2 min-w-[220px]">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                      {popupState.sites.length} pladser samme placering
-                    </span>
-                  </div>
-                  <div className="space-y-1.5 max-h-56 overflow-y-auto">
-                    {popupState.sites.map(s => (
+                <Layer {...clusterCircleLayer} />
+                <Layer {...clusterCountLayer} />
+                <Layer {...unclusteredPointLayer} />
+              </Source>
+
+              {/* Popup — single site */}
+              {popupState?.type === "site" && (
+                <Popup
+                  anchor="bottom"
+                  longitude={popupState.lng}
+                  latitude={popupState.lat}
+                  onClose={() => setPopupState(null)}
+                  closeButton
+                  closeOnClick={false}
+                  offset={12}
+                  maxWidth="260px"
+                >
+                  <div className="p-1.5 min-w-[200px]">
+                    <div className="flex items-center gap-1.5 mb-1">
                       <div
-                        key={s.id}
-                        className="flex items-start gap-2 p-1.5 rounded-lg bg-muted/40 hover:bg-muted transition-colors"
-                      >
-                        <div
-                          className="w-2.5 h-2.5 rounded-full shrink-0 mt-0.5"
-                          style={{ backgroundColor: LEVEL_HEX[s.level] ?? "#94a3b8" }}
-                        />
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium leading-tight truncate">{s.name}</p>
-                          <p className="text-[10px] text-muted-foreground">{LEVEL_LABEL[s.level]}</p>
-                        </div>
-                      </div>
-                    ))}
+                        className="w-2.5 h-2.5 rounded-full shrink-0"
+                        style={{ backgroundColor: LEVEL_HEX[popupState.site.level] }}
+                      />
+                      <span className="font-bold text-sm">{LEVEL_LABEL[popupState.site.level]}</span>
+                    </div>
+                    <h3 className="font-semibold text-sm leading-tight mb-1">{popupState.site.name}</h3>
+                    {popupState.site.address && (
+                      <p className="text-xs text-muted-foreground mb-1.5">{popupState.site.address}</p>
+                    )}
+                    <div className="flex items-center gap-1 flex-wrap">
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-muted">
+                        {popupState.site.dayRule === "altid" ? "Alle dage" : "Kun hverdage"}
+                      </span>
+                      <span className={clsx(
+                        "px-1.5 py-0.5 rounded text-[10px] font-semibold",
+                        popupState.site.active ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+                      )}>
+                        {popupState.site.active ? "Aktiv" : "Inaktiv"}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              </Popup>
+                </Popup>
+              )}
+
+              {/* Popup — overlapping cluster (same coordinates) */}
+              {popupState?.type === "cluster" && (
+                <Popup
+                  anchor="bottom"
+                  longitude={popupState.lng}
+                  latitude={popupState.lat}
+                  onClose={() => setPopupState(null)}
+                  closeButton
+                  closeOnClick={false}
+                  offset={12}
+                  maxWidth="280px"
+                >
+                  <div className="p-2 min-w-[220px]">
+                    <div className="mb-2">
+                      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                        {popupState.sites.length} pladser · samme placering
+                      </span>
+                    </div>
+                    <div className="space-y-1.5 max-h-56 overflow-y-auto">
+                      {popupState.sites.map(s => (
+                        <div
+                          key={s.id}
+                          className="flex items-start gap-2 p-1.5 rounded-lg bg-muted/40"
+                        >
+                          <div
+                            className="w-2.5 h-2.5 rounded-full shrink-0 mt-0.5"
+                            style={{ backgroundColor: LEVEL_HEX[s.level] ?? "#94a3b8" }}
+                          />
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium leading-tight truncate">{s.name}</p>
+                            <p className="text-[10px] text-muted-foreground">{LEVEL_LABEL[s.level]}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </Popup>
+              )}
+            </Map>
+
+            {/* Hover tooltip — absolutely positioned over the map canvas */}
+            {tooltip && (
+              <ClusterTooltip
+                x={tooltip.x}
+                y={tooltip.y}
+                count={tooltip.count}
+                vip={tooltip.vip}
+                hoj={tooltip.hoj}
+                lav={tooltip.lav}
+                basis={tooltip.basis}
+              />
             )}
-          </Map>
+          </>
         )}
       </div>
     </div>
   );
 }
+
+// ── Hover tooltip component ──────────────────────────────────────────────────
+
+function ClusterTooltip({
+  x, y, count, vip, hoj, lav, basis,
+}: { x: number; y: number; count: number; vip: number; hoj: number; lav: number; basis: number }) {
+  const levels = [
+    { key: "vip",   label: "VIP",   count: vip,   color: LEVEL_HEX.vip },
+    { key: "hoj",   label: "HØJ",   count: hoj,   color: LEVEL_HEX.hoj },
+    { key: "lav",   label: "LAV",   count: lav,   color: LEVEL_HEX.lav },
+    { key: "basis", label: "BASIS", count: basis, color: LEVEL_HEX.basis },
+  ].filter(l => l.count > 0);
+
+  // Position above and to the right of the cursor
+  const style: React.CSSProperties = {
+    position: "absolute",
+    left: x + 14,
+    top: y,
+    transform: "translateY(-100%) translateY(-8px)",
+    pointerEvents: "none",
+    zIndex: 50,
+  };
+
+  return (
+    <div style={style}>
+      <div className="bg-background/96 backdrop-blur-sm border border-border rounded-xl shadow-xl px-3 py-2.5 text-sm min-w-[120px]">
+        <div className="font-semibold text-foreground mb-1.5 flex items-baseline gap-1">
+          <span className="text-base">{count}</span>
+          <span className="text-xs text-muted-foreground font-normal">pladser</span>
+        </div>
+        {levels.length > 0 && (
+          <div className="space-y-1">
+            {levels.map(l => (
+              <div key={l.key} className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: l.color }} />
+                <span className="text-xs text-muted-foreground w-10">{l.label}</span>
+                <span className="text-xs font-semibold ml-auto">{l.count}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Error and fallback components ────────────────────────────────────────────
 
 function WebGLError({ message }: { message: string }) {
   return (
