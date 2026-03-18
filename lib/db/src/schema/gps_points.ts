@@ -1,26 +1,27 @@
-import { pgTable, text, timestamp, uuid, doublePrecision } from "drizzle-orm/pg-core";
+import { pgTable, timestamp, uuid, doublePrecision } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
-import { driversTable } from "./drivers";
+import { gpsTracksTable } from "./gps_tracks";
 
-export const gpsPositionsTable = pgTable("gps_positions", {
+export const gpsPointsTable = pgTable("gps_points", {
   id: uuid("id").primaryKey().defaultRandom(),
-  driverId: uuid("driver_id")
+  trackId: uuid("track_id")
     .notNull()
-    .references(() => driversTable.id, { onDelete: "cascade" }),
+    .references(() => gpsTracksTable.id, { onDelete: "cascade" }),
   lat: doublePrecision("lat").notNull(),
   lng: doublePrecision("lng").notNull(),
   accuracy: doublePrecision("accuracy"),
   heading: doublePrecision("heading"),
+  speed: doublePrecision("speed"),
   recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull().defaultNow(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
 
-export const insertGpsPositionSchema = createInsertSchema(gpsPositionsTable).omit({
+export const insertGpsPointSchema = createInsertSchema(gpsPointsTable).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
 });
-export type InsertGpsPosition = z.infer<typeof insertGpsPositionSchema>;
-export type GpsPosition = typeof gpsPositionsTable.$inferSelect;
+export type InsertGpsPoint = z.infer<typeof insertGpsPointSchema>;
+export type GpsPoint = typeof gpsPointsTable.$inferSelect;

@@ -50,20 +50,56 @@ Every package extends `tsconfig.base.json` which sets `composite: true`. The roo
 
 ## Database Schema
 
-7 tabeller, alle med UUID primærnøgler og `created_at`/`updated_at`:
+26 tabeller med UUID primærnøgler og `created_at`/`updated_at`. Normaliseret til vintertjeneste og udkaldsstyring.
 
-| Tabel | Relation | Formål |
+### Kerne-entiteter
+| Tabel | Afhænger af | Formål |
 |---|---|---|
-| `customers` | — | Kunder med kontaktinfo |
-| `zones` | — | Områder med GeoJSON og farve |
-| `drivers` | — | Chauffører med køretøj og aktiv-flag |
-| `locations` | → customers, → zones | Specifikke pladser/adresser per kunde |
-| `assignments` | → zones, → locations, → drivers | Udkald/opgaver med type, status og prioritet |
-| `sms_log` | → assignments | Log over afsendte SMS-beskeder |
-| `gps_positions` | → drivers | Live GPS-positioner per chauffør |
+| `parent_customers` | — | Overordnede kunder / holding |
+| `customers` | parent_customers | Kunder med CVR og kontakt |
+| `companies` | — | Leverandører og underleverandører |
+| `people` | companies, customers | Chauffører, disponenter, kontakter |
+| `vehicles` | — | Køretøjer med reg.nr. og type |
+| `qualifications` | — | Kvalifikationskrav (f.eks. saltcertifikat) |
+| `imports` | — | Log over GeoJSON/CSV-importer |
 
-**Status-enum (assignments):** afventer, igangsat, afsluttet, annulleret  
-**Type-enum (assignments):** snerydning, saltning, fejning, grusning, andet
+### Geografi
+| Tabel | Afhænger af | Formål |
+|---|---|---|
+| `areas` | customers | Faste geografiske områder |
+| `area_geometries` | areas, imports | GeoJSON-polygoner for et område |
+| `sites` | areas | Pladser med niveau (vip/hoj/lav/standard) og dagregel |
+| `site_markers` | sites | GPS-markørpunkter på en plads |
+| `site_geometries` | sites, imports | GeoJSON-geometri for en plads |
+| `site_qualification_requirements` | sites, qualifications | Krav-kobling |
+| `routes` | — | Kørselruter |
+| `route_sites` | routes, sites | Pladser i en rute (med rækkefølge) |
+
+### Udkald
+| Tabel | Afhænger af | Formål |
+|---|---|---|
+| `callouts` | people | Udkald oprettet af disponent |
+| `callout_area_statuses` | callouts, areas | Farve pr. område (grå/orange/blå/rød/grøn) |
+| `callout_sites` | callouts, sites | Beregnede pladser (inkluderet/ej), manuel override |
+| `callout_recipients` | callouts, people, companies, vehicles | Modtagere af udkald |
+
+### Kommunikation & Drift
+| Tabel | Afhænger af | Formål |
+|---|---|---|
+| `sms_messages` | callouts | Afsendte SMS-beskeder |
+| `sms_replies` | sms_messages | Indgående SMS-svar |
+| `jobs` | callouts, sites, vehicles, people | Konkrete jobs under udkald |
+| `gps_tracks` | jobs, people, vehicles | GPS-sessioner |
+| `gps_points` | gps_tracks | Individuelle GPS-punkter |
+| `salt_orders` | callouts, areas, companies | Saltordrer |
+| `audit_logs` | — | Ændringssporing (tabel+record+action) |
+
+### Farvelogik (callout_area_statuses.color)
+- **grå** = ingen kørsel
+- **orange** = kun VIP
+- **blå** = HØJ + VIP
+- **rød** = LAV + HØJ + VIP
+- **grøn** = alle pladser (standard + LAV + HØJ + VIP)
 
 ## Packages
 
