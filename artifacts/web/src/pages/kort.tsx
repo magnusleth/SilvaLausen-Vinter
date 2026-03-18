@@ -157,13 +157,13 @@ export default function KortPage() {
     id: "areas-fill",
     type: "fill",
     source: "areas",
-    paint: { "fill-color": "#3b82f6", "fill-opacity": 0.05 },
+    paint: { "fill-color": "#3b82f6", "fill-opacity": 0.08 },
   };
   const areaOutlineLayer: LineLayer = {
     id: "areas-outline",
     type: "line",
     source: "areas",
-    paint: { "line-color": "#3b82f6", "line-width": 1.5, "line-opacity": 0.5 },
+    paint: { "line-color": "#60a5fa", "line-width": 2, "line-opacity": 0.75 },
   };
 
   const geoLineLayer: LineLayer = {
@@ -173,29 +173,29 @@ export default function KortPage() {
     filter: ["==", ["geometry-type"], "LineString"],
     paint: {
       "line-color": ["coalesce", ["get", "color"], "#888888"],
-      "line-width": 2.5,
-      "line-opacity": 0.85,
+      "line-width": 3,
+      "line-opacity": 0.9,
     },
   };
   const geoFillLayer: FillLayer = {
     id: "site-geo-fill",
     type: "fill",
     source: "site-geo",
-    filter: ["==", ["geometry-type"], "Polygon"],
+    filter: ["match", ["geometry-type"], ["Polygon", "MultiPolygon"], true, false],
     paint: {
       "fill-color": ["coalesce", ["get", "color"], "#888888"],
-      "fill-opacity": 0.35,
+      "fill-opacity": 0.4,
     },
   };
   const geoOutlineLayer: LineLayer = {
     id: "site-geo-outline",
     type: "line",
     source: "site-geo",
-    filter: ["==", ["geometry-type"], "Polygon"],
+    filter: ["match", ["geometry-type"], ["Polygon", "MultiPolygon"], true, false],
     paint: {
       "line-color": ["coalesce", ["get", "color"], "#888888"],
-      "line-width": 1.5,
-      "line-opacity": 0.9,
+      "line-width": 2,
+      "line-opacity": 0.95,
     },
   };
 

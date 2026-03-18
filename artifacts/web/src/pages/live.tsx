@@ -191,22 +191,22 @@ export default function LivePage() {
     id: "live-site-geo-fill",
     type: "fill",
     source: "live-site-geo",
-    filter: ["==", ["geometry-type"], "Polygon"],
+    filter: ["match", ["geometry-type"], ["Polygon", "MultiPolygon"], true, false],
     paint: { "fill-color": ["coalesce", ["get", "color"], "#888888"], "fill-opacity": 0.4 },
   };
   const siteGeoOutlineLayer: LineLayer = {
     id: "live-site-geo-outline",
     type: "line",
     source: "live-site-geo",
-    filter: ["==", ["geometry-type"], "Polygon"],
-    paint: { "line-color": ["coalesce", ["get", "color"], "#888888"], "line-width": 1.5, "line-opacity": 0.9 },
+    filter: ["match", ["geometry-type"], ["Polygon", "MultiPolygon"], true, false],
+    paint: { "line-color": ["coalesce", ["get", "color"], "#888888"], "line-width": 2, "line-opacity": 0.95 },
   };
   const siteGeoLineLayer: LineLayer = {
     id: "live-site-geo-lines",
     type: "line",
     source: "live-site-geo",
     filter: ["==", ["geometry-type"], "LineString"],
-    paint: { "line-color": ["coalesce", ["get", "color"], "#888888"], "line-width": 2.5, "line-opacity": 0.85 },
+    paint: { "line-color": ["coalesce", ["get", "color"], "#888888"], "line-width": 3, "line-opacity": 0.9 },
   };
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
