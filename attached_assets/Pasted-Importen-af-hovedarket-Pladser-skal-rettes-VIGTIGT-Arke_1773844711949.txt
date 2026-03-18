@@ -1,0 +1,67 @@
+Importen af hovedarket "Pladser" skal rettes.
+
+VIGTIGT:
+Arket "Pladser" i UDKALDSARK 2025 2026 er source of truth.
+Men du må KUN bruge selve tabellen.
+
+AFGRÆNSNING:
+- Brug kun linje 1 til linje 939 i arket "Pladser"
+- Alt under linje 939 skal ignoreres fuldstændigt
+- Der må ikke importeres noter, hjælpefelter eller andet der står under tabellen
+
+Krav:
+1. Brug kun tabelområdet i arket "Pladser"
+2. Header skal komme fra tabellen
+3. Kun rækker inden for linje 1–939 må behandles
+4. PladsNavn skal komme direkte fra kolonnen "PladsNavn"
+5. Alle relevante rækker i selve tabellen skal med
+6. Status skal bevares præcist fra Excel, mindst:
+   - Aktiv
+   - NyAktiv
+   - Inaktiv
+   - Tilbud
+   - Udgår
+   - blank hvis den findes i tabellen
+
+Mål:
+- /pladser skal være en 1:1 administrationsvisning af hovedarket "Pladser"
+- men kun for selve tabelområdet
+- intet under tabellen må komme med
+
+Opgave:
+
+1. Genanalysér arket "Pladser" med den hårde afgrænsning:
+- kun linje 1–939
+- rapportér antal datarækker i dette område
+- rapportér antal rækker med udfyldt PladsNavn i dette område
+- rapportér statusfordeling i dette område
+- vis kolonnenavnene i tabellen
+
+2. Ret importen
+- importér kun rækker fra linje 1–939
+- ignorer alt under linje 939
+- behold PladsNavn præcist som i Excel-tabellen
+- behold status præcist som i Excel-tabellen
+
+3. Bevar alle kolonner fra tabelområdet
+- gem kernefelter som rigtige kolonner
+- gem resten i raw_data / excel_payload hvis nødvendigt
+- intet fra tabelområdet må gå tabt
+
+4. Opdater /pladser
+- siden skal nu vise hele hovedtabellen fra linje 1–939
+- der skal kunne filtreres på status
+- siden må ikke kun vise driftssynlige pladser
+
+5. Driftssider må stadig være filtrerede
+- /kort
+- /udkald/:id
+- /live/:calloutId
+må stadig kun vise de pladser der er relevante i drift
+
+Når du er færdig, lever:
+A. præcist antal importerede rækker fra tabelområdet linje 1–939
+B. statusfordeling
+C. bekræftelse af at alt under linje 939 er ignoreret
+D. bekræftelse af at PladsNavn kommer direkte fra Excel-kolonnen "PladsNavn"
+E. bekræftelse af at /pladser nu viser hele tabelområdet og ikke kun driftssynlige pladser

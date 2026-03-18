@@ -40,6 +40,7 @@ type Site = {
   level: string;
   dayRule: string;
   active: boolean;
+  excelStatus: string | null;
   notes: string | null;
   codeKey: string | null;
   iceControl: string | null;
@@ -48,7 +49,7 @@ type Site = {
   kunde: string | null;
   vaKunde: string | null;
   smapsId: string | null;
-  areaId: string;
+  areaId: string | null;
   areaName: string;
   geometryCount: number;
   markers: { lat: number; lng: number; label: string | null }[];
@@ -143,11 +144,19 @@ export default function PladsVisPage() {
   const marker = site.markers?.[0];
   const niveau = NIVEAU_LABELS[site.level] ?? { label: site.level.toUpperCase(), color: "text-muted-foreground bg-muted" };
 
+  const STATUS_DOT: Record<string, string> = {
+    Aktiv:   "bg-green-400",
+    NyAktiv: "bg-teal-400",
+    Inaktiv: "bg-zinc-500",
+    Tilbud:  "bg-yellow-400",
+    Udgår:   "bg-red-500",
+  };
+
   return (
     <div className="max-w-5xl mx-auto px-6 py-6 space-y-6">
       {/* Topbar */}
       <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <Button variant="ghost" size="sm" onClick={() => setLocation("/pladser")}>
             <ArrowLeft className="w-4 h-4 mr-1" /> Pladser
           </Button>
@@ -156,9 +165,15 @@ export default function PladsVisPage() {
           <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-bold border ${niveau.color}`}>
             {niveau.label}
           </span>
-          {!site.active && (
+          {site.excelStatus && (
+            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-muted border border-border/60">
+              <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT[site.excelStatus] ?? "bg-zinc-500"}`} />
+              {site.excelStatus}
+            </span>
+          )}
+          {!site.active && !["Aktiv","NyAktiv"].includes(site.excelStatus ?? "") && (
             <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-destructive/10 text-destructive border border-destructive/30">
-              Inaktiv
+              Ikke i drift
             </span>
           )}
         </div>

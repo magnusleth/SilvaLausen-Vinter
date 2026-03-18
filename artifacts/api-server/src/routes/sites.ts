@@ -56,9 +56,15 @@ router.get("/sites/admin", async (req, res): Promise<void> => {
     geometryCount: geoMap[s.id] ?? 0,
   }));
 
+  const { status } = req.query as Record<string, string | undefined>;
+
   if (areaId) result = result.filter(s => s.areaId === areaId);
   if (active === "true") result = result.filter(s => s.active);
   if (active === "false") result = result.filter(s => !s.active);
+  if (status && status !== "alle") {
+    if (status === "blank") result = result.filter(s => !s.excelStatus);
+    else result = result.filter(s => (s.excelStatus ?? "") === status);
+  }
   if (search) {
     const q = search.toLowerCase();
     result = result.filter(s =>
@@ -262,7 +268,7 @@ router.patch("/sites/:id", async (req, res): Promise<void> => {
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const body = req.body as Record<string, unknown>;
 
-  const allowed = ["name", "address", "postalCode", "city", "level", "dayRule", "active", "notes", "codeKey", "iceControl", "app", "bigCustomer", "vaKunde", "kunde"] as const;
+  const allowed = ["name", "address", "postalCode", "city", "level", "dayRule", "active", "excelStatus", "notes", "codeKey", "iceControl", "app", "bigCustomer", "vaKunde", "kunde"] as const;
   const updates: Record<string, unknown> = {};
   for (const field of allowed) {
     if (field in body) updates[field] = body[field];

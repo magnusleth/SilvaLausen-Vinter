@@ -6,7 +6,6 @@ import {
   Search,
   ChevronUp,
   ChevronDown,
-  Check,
   X,
   Hexagon,
   ToggleLeft,
@@ -21,7 +20,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 
@@ -36,6 +34,7 @@ type SiteAdmin = {
   level: string;
   dayRule: string;
   active: boolean;
+  excelStatus: string | null;
   codeKey: string | null;
   iceControl: string | null;
   app: string | null;
@@ -43,7 +42,7 @@ type SiteAdmin = {
   kunde: string | null;
   vaKunde: string | null;
   smapsId: string | null;
-  areaId: string;
+  areaId: string | null;
   areaName: string;
   hasMarker: boolean;
   geometryCount: number;
@@ -58,13 +57,30 @@ const NIVEAU_LABELS: Record<string, { label: string; color: string }> = {
   basis: { label: "BASIS", color: "bg-zinc-600/20 text-zinc-400 border-zinc-600/40" },
 };
 
-const DAGE_LABELS: Record<string, string> = {
-  altid: "Alle dage",
-  hverdage: "Hverdage",
+// Excel status → display
+const STATUS_CFG: Record<string, { label: string; dot: string; row?: string }> = {
+  Aktiv:    { label: "Aktiv",    dot: "bg-green-400",   row: "" },
+  NyAktiv:  { label: "NyAktiv",  dot: "bg-teal-400",    row: "" },
+  Inaktiv:  { label: "Inaktiv",  dot: "bg-muted-foreground", row: "opacity-50" },
+  Tilbud:   { label: "Tilbud",   dot: "bg-yellow-400",  row: "opacity-70" },
+  Udgår:    { label: "Udgår",    dot: "bg-red-500",     row: "opacity-40" },
+  "(blank)": { label: "—",       dot: "bg-zinc-600",    row: "opacity-40" },
 };
 
-type SortKey = keyof SiteAdmin;
-type SortDir = "asc" | "desc";
+function getStatusCfg(s: string | null) {
+  const key = s || "(blank)";
+  return STATUS_CFG[key] ?? { label: key, dot: "bg-zinc-600", row: "" };
+}
+
+function StatusBadge({ status }: { status: string | null }) {
+  const cfg = getStatusCfg(status);
+  return (
+    <span className="inline-flex items-center gap-1.5 text-xs">
+      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${cfg.dot}`} />
+      <span className="text-foreground/80">{cfg.label}</span>
+    </span>
+  );
+}
 
 function NiveauBadge({ level }: { level: string }) {
   const cfg = NIVEAU_LABELS[level] ?? { label: level.toUpperCase(), color: "bg-muted text-muted-foreground" };
@@ -75,15 +91,22 @@ function NiveauBadge({ level }: { level: string }) {
   );
 }
 
+const DAGE_LABELS: Record<string, string> = { altid: "Alle dage", hverdage: "Hverdage" };
+
+type SortKey = keyof SiteAdmin;
+type SortDir = "asc" | "desc";
+
+const STATUS_OPTIONS = ["alle", "Aktiv", "NyAktiv", "Inaktiv", "Tilbud", "Udgår", "blank"];
+
 export default function PladserPage() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const qc = useQueryClient();
 
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("alle");
   const [niveau, setNiveau] = useState("alle");
   const [areaFilter, setAreaFilter] = useState("alle");
-  const [aktivFilter, setAktivFilter] = useState("alle");
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
@@ -113,6 +136,11 @@ export default function PladserPage() {
 
   const filtered = useMemo(() => {
     let list = [...sites];
+
+    if (statusFilter !== "alle") {
+      if (statusFilter === "blank") list = list.filter((s) => !s.excelStatus);
+      else list = list.filter((s) => (s.excelStatus ?? "") === statusFilter);
+    }
     if (search) {
       const q = search.toLowerCase();
       list = list.filter(
@@ -128,8 +156,6 @@ export default function PladserPage() {
     }
     if (niveau !== "alle") list = list.filter((s) => s.level === niveau);
     if (areaFilter !== "alle") list = list.filter((s) => s.areaId === areaFilter);
-    if (aktivFilter === "aktiv") list = list.filter((s) => s.active);
-    if (aktivFilter === "inaktiv") list = list.filter((s) => !s.active);
 
     list.sort((a, b) => {
       const av = String(a[sortKey] ?? "");
@@ -138,7 +164,17 @@ export default function PladserPage() {
     });
 
     return list;
-  }, [sites, search, niveau, areaFilter, aktivFilter, sortKey, sortDir]);
+  }, [sites, search, statusFilter, niveau, areaFilter, sortKey, sortDir]);
+
+  // Summary counts
+  const counts = useMemo(() => {
+    const aktiv = sites.filter(s => s.excelStatus === "Aktiv").length;
+    const nyAktiv = sites.filter(s => s.excelStatus === "NyAktiv").length;
+    const udgar = sites.filter(s => s.excelStatus === "Udgår").length;
+    const tilbud = sites.filter(s => s.excelStatus === "Tilbud").length;
+    const inaktiv = sites.filter(s => s.excelStatus === "Inaktiv").length;
+    return { aktiv, nyAktiv, udgar, tilbud, inaktiv };
+  }, [sites]);
 
   function handleSort(key: SortKey) {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -152,6 +188,8 @@ export default function PladserPage() {
       : <ChevronDown className="w-3 h-3 opacity-80 ml-0.5 text-primary" />;
   }
 
+  const hasFilters = search || statusFilter !== "alle" || niveau !== "alle" || areaFilter !== "alle";
+
   const th = "px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap cursor-pointer hover:text-foreground select-none";
   const td = "px-3 py-2.5 text-sm align-middle";
 
@@ -159,11 +197,16 @@ export default function PladserPage() {
     <div className="flex flex-col h-full">
       {/* Header */}
       <div className="border-b bg-card/50 px-6 py-4 shrink-0">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-start justify-between mb-4">
           <div>
             <h1 className="text-xl font-bold text-foreground">Pladser</h1>
             <p className="text-sm text-muted-foreground mt-0.5">
               {isLoading ? "Indlæser…" : `${filtered.length} af ${sites.length} pladser`}
+              {!isLoading && (
+                <span className="ml-2 text-xs text-muted-foreground/60">
+                  · {counts.aktiv} Aktiv · {counts.nyAktiv} NyAktiv · {counts.tilbud} Tilbud · {counts.inaktiv} Inaktiv · {counts.udgar} Udgår
+                </span>
+              )}
             </p>
           </div>
         </div>
@@ -179,6 +222,30 @@ export default function PladserPage() {
               className="pl-8 h-8 text-sm"
             />
           </div>
+
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="h-8 w-36 text-sm">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="alle">Alle statuser</SelectItem>
+              <SelectItem value="Aktiv">
+                <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-green-400" />Aktiv</span>
+              </SelectItem>
+              <SelectItem value="NyAktiv">
+                <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-teal-400" />NyAktiv</span>
+              </SelectItem>
+              <SelectItem value="Tilbud">
+                <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-yellow-400" />Tilbud</span>
+              </SelectItem>
+              <SelectItem value="Inaktiv">
+                <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-zinc-500" />Inaktiv</span>
+              </SelectItem>
+              <SelectItem value="Udgår">
+                <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-red-500" />Udgår</span>
+              </SelectItem>
+            </SelectContent>
+          </Select>
 
           <Select value={niveau} onValueChange={setNiveau}>
             <SelectTrigger className="h-8 w-32 text-sm">
@@ -206,23 +273,12 @@ export default function PladserPage() {
             </SelectContent>
           </Select>
 
-          <Select value={aktivFilter} onValueChange={setAktivFilter}>
-            <SelectTrigger className="h-8 w-32 text-sm">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="alle">Alle</SelectItem>
-              <SelectItem value="aktiv">Aktive</SelectItem>
-              <SelectItem value="inaktiv">Inaktive</SelectItem>
-            </SelectContent>
-          </Select>
-
-          {(search || niveau !== "alle" || areaFilter !== "alle" || aktivFilter !== "alle") && (
+          {hasFilters && (
             <Button
               variant="ghost"
               size="sm"
               className="h-8 text-muted-foreground"
-              onClick={() => { setSearch(""); setNiveau("alle"); setAreaFilter("alle"); setAktivFilter("alle"); }}
+              onClick={() => { setSearch(""); setStatusFilter("alle"); setNiveau("alle"); setAreaFilter("alle"); }}
             >
               <X className="w-3.5 h-3.5 mr-1" /> Nulstil
             </Button>
@@ -232,9 +288,12 @@ export default function PladserPage() {
 
       {/* Table */}
       <div className="flex-1 overflow-auto">
-        <table className="w-full border-collapse text-sm min-w-[1200px]">
+        <table className="w-full border-collapse text-sm min-w-[1300px]">
           <thead className="sticky top-0 bg-card/95 backdrop-blur-sm z-10 border-b">
             <tr>
+              <th className={th} onClick={() => handleSort("excelStatus")}>
+                <span className="flex items-center">Status <SortIcon k="excelStatus" /></span>
+              </th>
               <th className={th} onClick={() => handleSort("name")}>
                 <span className="flex items-center">Pladsnavn <SortIcon k="name" /></span>
               </th>
@@ -274,102 +333,108 @@ export default function PladserPage() {
               <th className={th + " text-center"}>Markør</th>
               <th className={th + " text-center"}>Geo</th>
               <th className={th + " text-center"} onClick={() => handleSort("active")}>
-                <span className="flex items-center justify-center">Aktiv <SortIcon k="active" /></span>
+                <span className="flex items-center justify-center">Drift <SortIcon k="active" /></span>
               </th>
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
               <tr>
-                <td colSpan={15} className="text-center py-16 text-muted-foreground">
+                <td colSpan={16} className="text-center py-16 text-muted-foreground">
                   Indlæser pladser…
                 </td>
               </tr>
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={15} className="text-center py-16 text-muted-foreground">
+                <td colSpan={16} className="text-center py-16 text-muted-foreground">
                   Ingen pladser matcher filtret
                 </td>
               </tr>
             ) : (
-              filtered.map((s) => (
-                <tr
-                  key={s.id}
-                  className={`border-b border-border/40 hover:bg-accent/30 transition-colors cursor-pointer ${!s.active ? "opacity-50" : ""}`}
-                  onClick={() => setLocation(`/pladser/${s.id}`)}
-                >
-                  <td className={td + " font-medium max-w-[200px] truncate"} title={s.name}>
-                    {s.name}
-                  </td>
-                  <td className={td + " text-muted-foreground max-w-[160px] truncate"} title={s.address ?? ""}>
-                    {s.address ?? "—"}
-                  </td>
-                  <td className={td + " text-muted-foreground tabular-nums"}>
-                    {s.postalCode ?? "—"}
-                  </td>
-                  <td className={td + " text-muted-foreground"}>
-                    {s.city ?? "—"}
-                  </td>
-                  <td className={td}>
-                    <NiveauBadge level={s.level} />
-                  </td>
-                  <td className={td + " text-muted-foreground text-xs"}>
-                    {DAGE_LABELS[s.dayRule] ?? s.dayRule}
-                  </td>
-                  <td className={td + " max-w-[140px] truncate text-muted-foreground"} title={s.kunde ?? ""}>
-                    {s.kunde ?? "—"}
-                  </td>
-                  <td className={td + " max-w-[120px] truncate text-muted-foreground"} title={s.bigCustomer ?? ""}>
-                    {s.bigCustomer ?? "—"}
-                  </td>
-                  <td className={td + " font-mono text-xs text-muted-foreground"}>
-                    {s.codeKey ?? "—"}
-                  </td>
-                  <td className={td + " text-xs text-muted-foreground"}>
-                    {s.iceControl ?? "—"}
-                  </td>
-                  <td className={td + " text-xs text-muted-foreground"}>
-                    {s.app ?? "—"}
-                  </td>
-                  <td className={td + " text-muted-foreground text-xs"}>
-                    {s.areaName}
-                  </td>
-                  <td className={td + " text-center"}>
-                    {s.hasMarker
-                      ? <MapPin className="w-4 h-4 text-green-400 inline" />
-                      : <X className="w-4 h-4 text-muted-foreground/30 inline" />}
-                  </td>
-                  <td className={td + " text-center"}>
-                    {s.geometryCount > 0 ? (
-                      <span className="inline-flex items-center gap-0.5 text-xs font-medium text-blue-400">
-                        <Hexagon className="w-3.5 h-3.5" />
-                        {s.geometryCount}
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground/30 text-xs">—</span>
-                    )}
-                  </td>
-                  <td
-                    className={td + " text-center"}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleActiveMutation.mutate({ id: s.id, active: !s.active });
-                    }}
+              filtered.map((s) => {
+                const statusCfg = getStatusCfg(s.excelStatus);
+                return (
+                  <tr
+                    key={s.id}
+                    className={`border-b border-border/40 hover:bg-accent/30 transition-colors cursor-pointer ${statusCfg.row ?? ""}`}
+                    onClick={() => setLocation(`/pladser/${s.id}`)}
                   >
-                    {s.active
-                      ? <ToggleRight className="w-5 h-5 text-green-400 inline hover:opacity-70" />
-                      : <ToggleLeft className="w-5 h-5 text-muted-foreground/40 inline hover:opacity-70" />}
-                  </td>
-                </tr>
-              ))
+                    <td className={td}>
+                      <StatusBadge status={s.excelStatus} />
+                    </td>
+                    <td className={td + " font-medium max-w-[200px] truncate"} title={s.name}>
+                      {s.name}
+                    </td>
+                    <td className={td + " text-muted-foreground max-w-[160px] truncate"} title={s.address ?? ""}>
+                      {s.address ?? "—"}
+                    </td>
+                    <td className={td + " text-muted-foreground tabular-nums"}>
+                      {s.postalCode ?? "—"}
+                    </td>
+                    <td className={td + " text-muted-foreground"}>
+                      {s.city ?? "—"}
+                    </td>
+                    <td className={td}>
+                      <NiveauBadge level={s.level} />
+                    </td>
+                    <td className={td + " text-muted-foreground text-xs"}>
+                      {DAGE_LABELS[s.dayRule] ?? s.dayRule}
+                    </td>
+                    <td className={td + " max-w-[140px] truncate text-muted-foreground"} title={s.kunde ?? ""}>
+                      {s.kunde ?? "—"}
+                    </td>
+                    <td className={td + " max-w-[120px] truncate text-muted-foreground"} title={s.bigCustomer ?? ""}>
+                      {s.bigCustomer ?? "—"}
+                    </td>
+                    <td className={td + " font-mono text-xs text-muted-foreground"}>
+                      {s.codeKey ?? "—"}
+                    </td>
+                    <td className={td + " text-xs text-muted-foreground"}>
+                      {s.iceControl ?? "—"}
+                    </td>
+                    <td className={td + " text-xs text-muted-foreground"}>
+                      {s.app ?? "—"}
+                    </td>
+                    <td className={td + " text-muted-foreground text-xs"}>
+                      {s.areaName}
+                    </td>
+                    <td className={td + " text-center"}>
+                      {s.hasMarker
+                        ? <MapPin className="w-4 h-4 text-green-400 inline" />
+                        : <X className="w-4 h-4 text-muted-foreground/30 inline" />}
+                    </td>
+                    <td className={td + " text-center"}>
+                      {s.geometryCount > 0 ? (
+                        <span className="inline-flex items-center gap-0.5 text-xs font-medium text-blue-400">
+                          <Hexagon className="w-3.5 h-3.5" />
+                          {s.geometryCount}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground/30 text-xs">—</span>
+                      )}
+                    </td>
+                    <td
+                      className={td + " text-center"}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleActiveMutation.mutate({ id: s.id, active: !s.active });
+                      }}
+                    >
+                      {s.active
+                        ? <ToggleRight className="w-5 h-5 text-green-400 inline hover:opacity-70" />
+                        : <ToggleLeft className="w-5 h-5 text-muted-foreground/40 inline hover:opacity-70" />}
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
       </div>
 
-      {/* Footer count */}
+      {/* Footer */}
       <div className="border-t px-6 py-2 text-xs text-muted-foreground bg-card/30 shrink-0">
-        Viser {filtered.length} pladser · {sites.filter(s => s.active).length} aktive · {sites.filter(s => s.hasMarker).length} med markør · {sites.filter(s => s.geometryCount > 0).length} med geometri
+        Viser {filtered.length} pladser · {sites.filter(s => s.active).length} aktive i drift · {sites.filter(s => s.hasMarker).length} med markør · {sites.filter(s => s.geometryCount > 0).length} med geometri
       </div>
     </div>
   );

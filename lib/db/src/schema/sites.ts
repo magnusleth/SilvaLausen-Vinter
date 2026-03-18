@@ -24,15 +24,15 @@ export type SiteDayRule = (typeof siteDayRuleEnum)[number];
 export const sitesTable = pgTable("sites", {
   id: uuid("id").primaryKey().defaultRandom(),
   areaId: uuid("area_id")
-    .notNull()
-    .references(() => areasTable.id, { onDelete: "cascade" }),
+    .references(() => areasTable.id, { onDelete: "set null" }),
   name: text("name").notNull(),
   address: text("address"),
   postalCode: text("postal_code"),
   city: text("city"),
   level: text("level").notNull().default("basis"),
   dayRule: text("day_rule").notNull().default("altid"),
-  active: boolean("active").notNull().default(true),
+  active: boolean("active").notNull().default(false),
+  excelStatus: text("excel_status"),
   notes: text("notes"),
   codeKey: text("code_key"),
   iceControl: text("ice_control"),
