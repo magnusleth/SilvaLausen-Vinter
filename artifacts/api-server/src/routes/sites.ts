@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, sitesTable, siteMarkersTable, siteGeometriesTable } from "@workspace/db";
+import { db, sitesTable, siteMarkersTable, siteGeometriesTable, areasTable } from "@workspace/db";
 import {
   ListSitesResponse,
   GetSiteParams,
@@ -7,7 +7,7 @@ import {
   CreateSiteBody,
   ListSitesQueryParams,
 } from "@workspace/api-zod";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 
 const router: IRouter = Router();
 
@@ -30,11 +30,54 @@ router.get("/sites", async (req, res): Promise<void> => {
   res.json(ListSitesResponse.parse(rows));
 });
 
+// Admin endpoint — all sites with areaName, hasMarker, geometryCount (no active filter)
+router.get("/sites/admin", async (req, res): Promise<void> => {
+  const { areaId, active, search } = req.query as Record<string, string | undefined>;
+
+  const [allSites, allAreas, markerRows, geoRows] = await Promise.all([
+    db.select().from(sitesTable).orderBy(sitesTable.name),
+    db.select({ id: areasTable.id, name: areasTable.name }).from(areasTable),
+    db.select({ siteId: siteMarkersTable.siteId }).from(siteMarkersTable),
+    db
+      .select({ siteId: siteGeometriesTable.siteId, cnt: sql<number>`count(*)::int` })
+      .from(siteGeometriesTable)
+      .where(eq(siteGeometriesTable.draft, false))
+      .groupBy(siteGeometriesTable.siteId),
+  ]);
+
+  const areaMap = Object.fromEntries(allAreas.map(a => [a.id, a.name]));
+  const markerSet = new Set(markerRows.map(m => m.siteId));
+  const geoMap = Object.fromEntries(geoRows.map(g => [g.siteId, g.cnt]));
+
+  let result = allSites.map(s => ({
+    ...s,
+    areaName: areaMap[s.areaId] ?? "—",
+    hasMarker: markerSet.has(s.id),
+    geometryCount: geoMap[s.id] ?? 0,
+  }));
+
+  if (areaId) result = result.filter(s => s.areaId === areaId);
+  if (active === "true") result = result.filter(s => s.active);
+  if (active === "false") result = result.filter(s => !s.active);
+  if (search) {
+    const q = search.toLowerCase();
+    result = result.filter(s =>
+      s.name.toLowerCase().includes(q) ||
+      (s.address ?? "").toLowerCase().includes(q) ||
+      (s.city ?? "").toLowerCase().includes(q) ||
+      (s.postalCode ?? "").toLowerCase().includes(q) ||
+      (s.codeKey ?? "").toLowerCase().includes(q)
+    );
+  }
+
+  res.json(result);
+});
+
 // Sites with marker coordinates — used for map rendering
 router.get("/sites/map", async (req, res): Promise<void> => {
   const { areaId, level, active } = req.query;
-  const conditions = [eq(sitesTable.active, true)]; // always filter active by default
-  if (active === "false") conditions.length = 0; // allow override
+  const conditions = [eq(sitesTable.active, true)];
+  if (active === "false") conditions.length = 0;
   if (areaId && typeof areaId === "string") conditions.push(eq(sitesTable.areaId, areaId));
   if (level && typeof level === "string") conditions.push(eq(sitesTable.level, level));
 
@@ -52,7 +95,6 @@ router.get("/sites/map", async (req, res): Promise<void> => {
     .from(siteMarkersTable)
     .where(inArray(siteMarkersTable.siteId, siteIds));
 
-  // First marker per site
   const markerBySite: Record<string, { lat: number; lng: number; label: string | null }> = {};
   for (const m of markers) {
     if (!markerBySite[m.siteId]) markerBySite[m.siteId] = { lat: m.lat, lng: m.lng, label: m.label };
@@ -65,7 +107,7 @@ router.get("/sites/map", async (req, res): Promise<void> => {
   res.json(result);
 });
 
-// Site geometries as GeoJSON FeatureCollection — for map overlay, with color/type
+// Site geometries as GeoJSON FeatureCollection — only active sites, non-draft geometries
 router.get("/sites/geometries", async (req, res): Promise<void> => {
   const { areaId, level } = req.query;
 
@@ -96,7 +138,10 @@ router.get("/sites/geometries", async (req, res): Promise<void> => {
   const geometries = await db
     .select()
     .from(siteGeometriesTable)
-    .where(inArray(siteGeometriesTable.siteId, siteIds));
+    .where(and(
+      inArray(siteGeometriesTable.siteId, siteIds),
+      eq(siteGeometriesTable.draft, false)
+    ));
 
   const features = geometries.map(geo => {
     const geojson = geo.geojson as Record<string, unknown>;
@@ -125,14 +170,12 @@ router.get("/sites/geometries", async (req, res): Promise<void> => {
 
 // Preview: which sites would be included in a callout given area→color assignments?
 router.post("/sites/callout-preview", async (req, res): Promise<void> => {
-  // Body: { assignments: [{areaId, color}] }
   const { assignments } = req.body;
   if (!Array.isArray(assignments) || assignments.length === 0) {
     res.json({ totalSites: 0, byArea: {} });
     return;
   }
 
-  // Color → which levels are included
   const COLOR_LEVELS: Record<string, string[]> = {
     grå: [],
     orange: ["vip"],
@@ -158,10 +201,7 @@ router.post("/sites/callout-preview", async (req, res): Promise<void> => {
       ))
       .orderBy(sitesTable.level, sitesTable.name);
 
-    byArea[areaId] = {
-      count: sites.length,
-      sites: sites.slice(0, 10),
-    };
+    byArea[areaId] = { count: sites.length, sites: sites.slice(0, 10) };
     totalSites += sites.length;
   }
 
@@ -178,6 +218,7 @@ router.post("/sites", async (req, res): Promise<void> => {
   res.status(201).json(site);
 });
 
+// Get site detail with markers and geometry count
 router.get("/sites/:id", async (req, res): Promise<void> => {
   const params = GetSiteParams.safeParse(req.params);
   if (!params.success) {
@@ -187,22 +228,97 @@ router.get("/sites/:id", async (req, res): Promise<void> => {
 
   const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
 
-  const [site] = await db
+  const [siteRow] = await db
     .select()
     .from(sitesTable)
     .where(eq(sitesTable.id, raw));
 
-  if (!site) {
+  if (!siteRow) {
     res.status(404).json({ error: "Plads ikke fundet" });
     return;
   }
 
-  const markers = await db
-    .select()
-    .from(siteMarkersTable)
-    .where(eq(siteMarkersTable.siteId, raw));
+  const [markers, geoCount, areaRow] = await Promise.all([
+    db.select().from(siteMarkersTable).where(eq(siteMarkersTable.siteId, raw)),
+    db
+      .select({ cnt: sql<number>`count(*)::int` })
+      .from(siteGeometriesTable)
+      .where(and(eq(siteGeometriesTable.siteId, raw), eq(siteGeometriesTable.draft, false))),
+    db.select({ name: areasTable.name }).from(areasTable).where(eq(areasTable.id, siteRow.areaId)),
+  ]);
 
-  res.json(GetSiteResponse.parse({ ...site, markers }));
+  res.json({
+    ...siteRow,
+    markers,
+    geometryCount: geoCount[0]?.cnt ?? 0,
+    areaName: areaRow[0]?.name ?? "—",
+  });
+});
+
+// Update site fields (incl. active toggle)
+router.patch("/sites/:id", async (req, res): Promise<void> => {
+  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const body = req.body as Record<string, unknown>;
+
+  const allowed = ["name", "address", "postalCode", "city", "level", "dayRule", "active", "notes", "codeKey", "iceControl", "app", "bigCustomer"] as const;
+  const updates: Record<string, unknown> = {};
+  for (const field of allowed) {
+    if (field in body) updates[field] = body[field];
+  }
+
+  if (!Object.keys(updates).length) {
+    res.status(400).json({ error: "Ingen felter at opdatere" });
+    return;
+  }
+
+  const [site] = await db.update(sitesTable).set(updates).where(eq(sitesTable.id, raw)).returning();
+  if (!site) { res.status(404).json({ error: "Plads ikke fundet" }); return; }
+  res.json(site);
+});
+
+// Re-geocode site marker from address using DAWA
+router.post("/sites/:id/geocode", async (req, res): Promise<void> => {
+  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+  const [site] = await db.select().from(sitesTable).where(eq(sitesTable.id, raw));
+  if (!site) { res.status(404).json({ error: "Plads ikke fundet" }); return; }
+
+  const q = [site.address, site.postalCode, site.city].filter(Boolean).join(" ");
+  if (!q) { res.status(400).json({ error: "Ingen adresse at geokode" }); return; }
+
+  try {
+    const dawaRes = await fetch(`https://api.dataforsyningen.dk/adresser?q=${encodeURIComponent(q)}&fuzzy&format=json`);
+    const results = await dawaRes.json() as Record<string, unknown>[];
+
+    if (!results.length) {
+      res.status(404).json({ error: "Adresse ikke fundet i DAWA" });
+      return;
+    }
+
+    const first = results[0] as Record<string, unknown>;
+    const adg = first.adgangsadresse as Record<string, unknown>;
+    const koordinater = (adg?.adgangspunkt as Record<string, number[]>)?.koordinater;
+    if (!koordinater) {
+      res.status(422).json({ error: "Ingen koordinater i DAWA-svar" });
+      return;
+    }
+
+    const lng = koordinater[0];
+    const lat = koordinater[1];
+
+    const existingMarkers = await db.select().from(siteMarkersTable).where(eq(siteMarkersTable.siteId, raw));
+
+    if (existingMarkers.length > 0) {
+      await db.update(siteMarkersTable).set({ lat, lng, updatedAt: new Date() }).where(eq(siteMarkersTable.siteId, raw));
+    } else {
+      await db.insert(siteMarkersTable).values({ siteId: raw, lat, lng, label: site.name });
+    }
+
+    res.json({ lat, lng, updated: existingMarkers.length > 0 ? "updated" : "created" });
+  } catch (err) {
+    console.error("[geocode]", err);
+    res.status(500).json({ error: "Geokodningsfejl" });
+  }
 });
 
 export default router;

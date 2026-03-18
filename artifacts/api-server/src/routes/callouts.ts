@@ -334,11 +334,14 @@ router.get("/callouts/:id/geometries", async (req, res): Promise<void> => {
     .where(inArray(sitesTable.id, siteIds));
   const siteMeta: Record<string, typeof sites[number]> = Object.fromEntries(sites.map(s => [s.id, s]));
 
-  // Get geometries
+  // Get geometries — only non-draft
   const geometries = await db
     .select()
     .from(siteGeometriesTable)
-    .where(inArray(siteGeometriesTable.siteId, siteIds));
+    .where(and(
+      inArray(siteGeometriesTable.siteId, siteIds),
+      eq(siteGeometriesTable.draft, false)
+    ));
 
   const features = geometries.map(geo => {
     const meta = siteMeta[geo.siteId];
