@@ -19,6 +19,7 @@ import {
   ChevronUp,
   Users,
   AlertTriangle,
+  Truck,
 } from "lucide-react";
 import { clsx } from "clsx";
 import { format } from "date-fns";
@@ -252,18 +253,33 @@ export default function UdkaldVisPage() {
           </div>
         </div>
 
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleCopyLink}
-          className="shrink-0 gap-1.5 ml-4"
-        >
-          {copied ? (
-            <><CheckCheck className="w-3.5 h-3.5 text-green-600" /> Kopieret!</>
-          ) : (
-            <><Copy className="w-3.5 h-3.5" /> Kopier link</>
-          )}
-        </Button>
+        <div className="flex items-center gap-2 shrink-0 ml-4">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleCopyLink}
+            className="gap-1.5"
+          >
+            {copied ? (
+              <><CheckCheck className="w-3.5 h-3.5 text-green-600" /> Kopieret!</>
+            ) : (
+              <><Copy className="w-3.5 h-3.5" /> Kopier link</>
+            )}
+          </Button>
+          <Button
+            variant="default"
+            size="sm"
+            className="gap-1.5"
+            onClick={() => {
+              const base = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
+              const liveUrl = window.location.origin + base + `/live/${data.id}`;
+              window.open(liveUrl, "_blank", "noopener");
+            }}
+          >
+            <Truck className="w-3.5 h-3.5" />
+            Chaufførvisning
+          </Button>
+        </div>
       </div>
 
       {/* Body: Sidebar + Map */}

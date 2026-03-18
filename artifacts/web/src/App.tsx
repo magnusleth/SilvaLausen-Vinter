@@ -14,6 +14,7 @@ import NytUdkaldPage from "@/pages/udkald-nyt";
 import UdkaldVisPage from "@/pages/udkald-vis";
 import KunderPage from "@/pages/kunder";
 import ChauffororPage from "@/pages/chaufforer";
+import LivePage from "@/pages/live";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -35,18 +36,26 @@ function RedirectToDashboard() {
 
 function Router() {
   return (
-    <AppLayout>
-      <Switch>
-        <Route path="/" component={RedirectToDashboard} />
-        <Route path="/dashboard" component={Dashboard} />
-        <Route path="/kort" component={KortPage} />
-        <Route path="/udkald/nyt" component={NytUdkaldPage} />
-        <Route path="/udkald/:id" component={UdkaldVisPage} />
-        <Route path="/kunder" component={KunderPage} />
-        <Route path="/chaufforer" component={ChauffororPage} />
-        <Route component={NotFound} />
-      </Switch>
-    </AppLayout>
+    <Switch>
+      {/* Live driver view — no admin layout, full screen */}
+      <Route path="/live/:calloutId" component={LivePage} />
+
+      {/* All admin routes wrapped in AppLayout */}
+      <Route>
+        <AppLayout>
+          <Switch>
+            <Route path="/" component={RedirectToDashboard} />
+            <Route path="/dashboard" component={Dashboard} />
+            <Route path="/kort" component={KortPage} />
+            <Route path="/udkald/nyt" component={NytUdkaldPage} />
+            <Route path="/udkald/:id" component={UdkaldVisPage} />
+            <Route path="/kunder" component={KunderPage} />
+            <Route path="/chaufforer" component={ChauffororPage} />
+            <Route component={NotFound} />
+          </Switch>
+        </AppLayout>
+      </Route>
+    </Switch>
   );
 }
 

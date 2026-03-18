@@ -114,10 +114,18 @@ Every package extends `tsconfig.base.json` which sets `composite: true`. The roo
 ### API endpoints (implementerede)
 - `GET /api/areas-with-geometry` — alle områder + GeoJSON polygon
 - `GET /api/callouts/:id/map` — udkald + aktive områder + geometrier + pladssnapshot per område
+- `GET /api/callouts/:id/live` — chaufførvisning: udkald + alle snapshot-pladser med koordinater (id, name, level, address, lat, lng)
 - `POST /api/callouts` — opret udkald med area-statuses og plads-snapshot
 - `GET /api/sites/map` — site markers med koordinater (filter: areaId, level)
 - `GET /api/sites/geometries` — GeoJSON FeatureCollection med site-geometrier
 - `POST /api/sites/callout-preview` — forhåndsberegn pladser givet `{assignments: [{areaId, color}]}`
+
+### Frontend sider
+- `/dashboard` — overblik
+- `/kort` — disponent kortvisning med clustering, niveau-filter, områdegrænser
+- `/udkald/nyt` — opret nyt udkald
+- `/udkald/:id` — udkald-detalje (disponent, shareable)
+- `/live/:calloutId` — **chaufførvisning** (no auth, no nav, mobile-first, Mapbox clustering, Google Maps navigation)
 
 ### Vigtige designbeslutninger
 - `callout_sites` er et snapshot — ændringer i `sites` tabel efter oprettelse ændrer ikke udkald

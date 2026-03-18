@@ -7,6 +7,7 @@ import {
   areasTable,
   areaGeometriesTable,
   sitesTable,
+  siteMarkersTable,
 } from "@workspace/db";
 import { inArray } from "drizzle-orm";
 import {
@@ -222,6 +223,73 @@ router.get("/callouts/:id/map", async (req, res): Promise<void> => {
   const totalSites = snapshotSites.length;
 
   res.json({ ...callout, areas: areasWithGeo, totalSites });
+});
+
+// Live driver view endpoint — snapshot sites with marker coordinates
+router.get("/callouts/:id/live", async (req, res): Promise<void> => {
+  const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+  const [callout] = await db
+    .select()
+    .from(calloutsTable)
+    .where(eq(calloutsTable.id, raw));
+
+  if (!callout) {
+    res.status(404).json({ error: "Udkald ikke fundet" });
+    return;
+  }
+
+  // Fetch snapshot sites joined with site details
+  const snapshotSites = await db
+    .select({
+      siteId: calloutSitesTable.siteId,
+      name: sitesTable.name,
+      level: sitesTable.level,
+      address: sitesTable.address,
+      areaId: sitesTable.areaId,
+      dayRule: sitesTable.dayRule,
+    })
+    .from(calloutSitesTable)
+    .innerJoin(sitesTable, eq(calloutSitesTable.siteId, sitesTable.id))
+    .where(
+      and(
+        eq(calloutSitesTable.calloutId, raw),
+        eq(calloutSitesTable.included, true)
+      )
+    )
+    .orderBy(sitesTable.level, sitesTable.name);
+
+  if (snapshotSites.length === 0) {
+    res.json({ ...callout, totalSites: 0, sites: [] });
+    return;
+  }
+
+  // Fetch first marker per site for coordinates
+  const siteIds = snapshotSites.map(s => s.siteId);
+  const markers = await db
+    .select()
+    .from(siteMarkersTable)
+    .where(inArray(siteMarkersTable.siteId, siteIds));
+
+  const markerBySite: Record<string, { lat: number; lng: number }> = {};
+  for (const m of markers) {
+    if (!markerBySite[m.siteId]) markerBySite[m.siteId] = { lat: m.lat, lng: m.lng };
+  }
+
+  const sites = snapshotSites
+    .filter(s => markerBySite[s.siteId])
+    .map(s => ({
+      id: s.siteId,
+      name: s.name,
+      level: s.level,
+      address: s.address,
+      areaId: s.areaId,
+      dayRule: s.dayRule,
+      lat: markerBySite[s.siteId].lat,
+      lng: markerBySite[s.siteId].lng,
+    }));
+
+  res.json({ ...callout, totalSites: snapshotSites.length, sites });
 });
 
 router.patch("/callouts/:id", async (req, res): Promise<void> => {
