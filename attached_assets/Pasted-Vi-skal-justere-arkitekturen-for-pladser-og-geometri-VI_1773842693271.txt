@@ -1,0 +1,68 @@
+Vi skal justere arkitekturen for pladser og geometri.
+
+VIGTIGT:
+Prikker/markører på kortet må KUN komme fra hovedarket "Pladser" (sites/site_markers), dvs. fra adressen og stamdata i hovedarket.
+Geometrier skal redigeres i et separat værktøj/site og må først vises i driftskortet når de er koblet til en aktiv plads i hovedarket.
+
+Det betyder:
+
+1. Source of truth
+- hovedarket / Pladser er source of truth for alle aktive pladser
+- markører/prikker må kun oprettes ud fra pladser i hovedarket
+- geokodning til site_markers skal kun ske for pladser i hovedarket
+- hvis en plads ikke findes i hovedarket, må den ikke vises som aktiv markør i drift
+
+2. Driftssider
+På disse sider:
+- /kort
+- /udkald/:id
+- /live/:calloutId
+
+må systemet kun vise:
+- site_markers for aktive sites fra hovedarket
+- site_geometries for aktive sites fra hovedarket
+
+3. Separat geometri-værktøj
+Byg et separat sted til kortredigering, fx:
+- /geometri
+eller
+- /tegning
+
+Her skal man kunne:
+- vælge en eksisterende plads fra hovedarket
+- tegne ny geometri
+- redigere eksisterende geometri
+- gemme geometri
+- oprette kladder uden at de nødvendigvis bliver vist i drift med det samme
+
+4. Synlighedsregel
+En geometri må kun vises på driftskort og chaufførkort hvis:
+- den er koblet til et eksisterende site
+- og sitet er aktivt i hovedarket / Pladser
+
+5. Pladser-side
+Byg /pladser som hovedadministration for sites
+Denne side skal være stedet hvor man:
+- opretter nye pladser
+- redigerer stamdata
+- aktiverer/deaktiverer pladser
+- styrer om en plads er med i drift
+
+6. Nye pladser
+Når en ny plads oprettes:
+- den oprettes først i /pladser
+- markør laves ud fra adresse/geokodning
+- geometri kan bagefter tegnes i /geometri
+- geometri bliver først vist i drift når pladsen er aktiv i /pladser
+
+7. VIGTIGT
+- Rør ikke callout-logikken
+- Rør ikke chaufførflowet unødigt
+- Flyt ikke source of truth væk fra hovedarket
+- Lad ikke geometri-import alene skabe aktive pladser
+
+Lever nu:
+A. en kort beskrivelse af den justerede arkitektur
+B. hvilke sider der skal findes (/pladser og /geometri)
+C. hvordan synlighedsreglen implementeres
+D. hvilke queries der skal ændres så driftssider kun viser aktive pladser fra hovedarket
