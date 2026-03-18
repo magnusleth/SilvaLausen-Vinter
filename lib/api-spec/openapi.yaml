@@ -1,22 +1,31 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Vintertjeneste & Driftsstyring API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: customers
+    description: Kunder
+  - name: areas
+    description: Geografiske områder
+  - name: sites
+    description: Pladser
+  - name: callouts
+    description: Udkald
+  - name: people
+    description: Driftspersonale
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +33,293 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /customers:
+    get:
+      operationId: listCustomers
+      tags: [customers]
+      summary: Hent alle kunder
+      responses:
+        "200":
+          description: Liste af kunder
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Customer"
+
+  /areas:
+    get:
+      operationId: listAreas
+      tags: [areas]
+      summary: Hent alle områder
+      parameters:
+        - name: customerId
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Liste af områder
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Area"
+    post:
+      operationId: createArea
+      tags: [areas]
+      summary: Opret nyt område
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAreaBody"
+      responses:
+        "201":
+          description: Oprettet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Area"
+
+  /areas/{id}:
+    get:
+      operationId: getArea
+      tags: [areas]
+      summary: Hent et område med geometri og pladser
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Område
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AreaDetail"
+        "404":
+          description: Ikke fundet
+
+  /sites:
+    get:
+      operationId: listSites
+      tags: [sites]
+      summary: Hent pladser
+      parameters:
+        - name: areaId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: level
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: active
+          in: query
+          required: false
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: Liste af pladser
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Site"
+    post:
+      operationId: createSite
+      tags: [sites]
+      summary: Opret ny plads
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSiteBody"
+      responses:
+        "201":
+          description: Oprettet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Site"
+
+  /sites/{id}:
+    get:
+      operationId: getSite
+      tags: [sites]
+      summary: Hent en plads med markører
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Plads
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SiteDetail"
+        "404":
+          description: Ikke fundet
+
+  /callouts:
+    get:
+      operationId: listCallouts
+      tags: [callouts]
+      summary: Hent alle udkald
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Liste af udkald
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Callout"
+    post:
+      operationId: createCallout
+      tags: [callouts]
+      summary: Opret nyt udkald
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCalloutBody"
+      responses:
+        "201":
+          description: Oprettet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Callout"
+
+  /callouts/{id}:
+    get:
+      operationId: getCallout
+      tags: [callouts]
+      summary: Hent udkald med områder og pladser
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Udkald
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalloutDetail"
+        "404":
+          description: Ikke fundet
+    patch:
+      operationId: updateCallout
+      tags: [callouts]
+      summary: Opdater udkald
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCalloutBody"
+      responses:
+        "200":
+          description: Opdateret
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Callout"
+        "404":
+          description: Ikke fundet
+
+  /callouts/{id}/area-statuses:
+    get:
+      operationId: listCalloutAreaStatuses
+      tags: [callouts]
+      summary: Hent område-farver for et udkald
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Område-farver
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CalloutAreaStatus"
+    put:
+      operationId: setCalloutAreaStatus
+      tags: [callouts]
+      summary: Sæt farve for et område i et udkald
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetCalloutAreaStatusBody"
+      responses:
+        "200":
+          description: Opdateret
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalloutAreaStatus"
+
+  /people:
+    get:
+      operationId: listPeople
+      tags: [people]
+      summary: Hent driftspersonale
+      responses:
+        "200":
+          description: Liste af personer
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Person"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +330,409 @@ components:
       required:
         - status
 
+    Customer:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        cvr:
+          type: ["string", "null"]
+        address:
+          type: ["string", "null"]
+        contactPerson:
+          type: ["string", "null"]
+        phone:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        active:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - active
+        - createdAt
+        - updatedAt
+
+    Area:
+      type: object
+      properties:
+        id:
+          type: string
+        customerId:
+          type: ["string", "null"]
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        active:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - active
+        - createdAt
+        - updatedAt
+
+    AreaGeometry:
+      type: object
+      properties:
+        id:
+          type: string
+        areaId:
+          type: string
+        geojson:
+          type: object
+          description: GeoJSON FeatureCollection eller Feature
+        source:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - areaId
+        - geojson
+        - source
+        - createdAt
+
+    AreaDetail:
+      type: object
+      properties:
+        id:
+          type: string
+        customerId:
+          type: ["string", "null"]
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        active:
+          type: boolean
+        geometries:
+          type: array
+          items:
+            $ref: "#/components/schemas/AreaGeometry"
+        sites:
+          type: array
+          items:
+            $ref: "#/components/schemas/Site"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - active
+        - geometries
+        - sites
+        - createdAt
+        - updatedAt
+
+    CreateAreaBody:
+      type: object
+      properties:
+        customerId:
+          type: ["string", "null"]
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+      required:
+        - name
+
+    Site:
+      type: object
+      properties:
+        id:
+          type: string
+        areaId:
+          type: string
+        name:
+          type: string
+        address:
+          type: ["string", "null"]
+        level:
+          type: string
+          enum: [vip, hoj, lav, basis]
+        dayRule:
+          type: string
+          enum: [altid, hverdage, weekend, hverdage_og_lordag]
+        active:
+          type: boolean
+        notes:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - areaId
+        - name
+        - level
+        - dayRule
+        - active
+        - createdAt
+        - updatedAt
+
+    SiteMarker:
+      type: object
+      properties:
+        id:
+          type: string
+        siteId:
+          type: string
+        label:
+          type: ["string", "null"]
+        lat:
+          type: number
+        lng:
+          type: number
+        notes:
+          type: ["string", "null"]
+      required:
+        - id
+        - siteId
+        - lat
+        - lng
+
+    SiteDetail:
+      type: object
+      properties:
+        id:
+          type: string
+        areaId:
+          type: string
+        name:
+          type: string
+        address:
+          type: ["string", "null"]
+        level:
+          type: string
+        dayRule:
+          type: string
+        active:
+          type: boolean
+        notes:
+          type: ["string", "null"]
+        markers:
+          type: array
+          items:
+            $ref: "#/components/schemas/SiteMarker"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - areaId
+        - name
+        - level
+        - dayRule
+        - active
+        - markers
+        - createdAt
+        - updatedAt
+
+    CreateSiteBody:
+      type: object
+      properties:
+        areaId:
+          type: string
+        name:
+          type: string
+        address:
+          type: ["string", "null"]
+        level:
+          type: string
+          enum: [vip, hoj, lav, basis]
+        dayRule:
+          type: string
+          enum: [altid, hverdage, weekend, hverdage_og_lordag]
+      required:
+        - areaId
+        - name
+        - level
+        - dayRule
+
+    Callout:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        status:
+          type: string
+          enum: [kladde, aktiv, afsluttet, annulleret]
+        notes:
+          type: ["string", "null"]
+        startedAt:
+          type: ["string", "null"]
+          format: date-time
+        endedAt:
+          type: ["string", "null"]
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - title
+        - status
+        - createdAt
+        - updatedAt
+
+    CalloutAreaStatus:
+      type: object
+      properties:
+        id:
+          type: string
+        calloutId:
+          type: string
+        areaId:
+          type: string
+        color:
+          type: string
+          enum: ["grå", "orange", "blå", "rød", "grøn"]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - calloutId
+        - areaId
+        - color
+        - createdAt
+        - updatedAt
+
+    CalloutDetail:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        status:
+          type: string
+        notes:
+          type: ["string", "null"]
+        areaStatuses:
+          type: array
+          items:
+            $ref: "#/components/schemas/CalloutAreaStatus"
+        startedAt:
+          type: ["string", "null"]
+          format: date-time
+        endedAt:
+          type: ["string", "null"]
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - title
+        - status
+        - areaStatuses
+        - createdAt
+        - updatedAt
+
+    CreateCalloutBody:
+      type: object
+      properties:
+        title:
+          type: string
+        notes:
+          type: ["string", "null"]
+      required:
+        - title
+
+    UpdateCalloutBody:
+      type: object
+      properties:
+        title:
+          type: string
+        status:
+          type: string
+          enum: [kladde, aktiv, afsluttet, annulleret]
+        notes:
+          type: ["string", "null"]
+
+    SetCalloutAreaStatusBody:
+      type: object
+      properties:
+        areaId:
+          type: string
+        color:
+          type: string
+          enum: ["grå", "orange", "blå", "rød", "grøn"]
+      required:
+        - areaId
+        - color
+
+    Person:
+      type: object
+      properties:
+        id:
+          type: string
+        companyId:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        phone:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        role:
+          type: string
+        active:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - companyId
+        - firstName
+        - lastName
+        - role
+        - active
+        - createdAt
+        - updatedAt

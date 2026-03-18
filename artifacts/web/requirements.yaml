@@ -1,0 +1,14 @@
+packages:
+  "mapbox-gl": "Map visualization library required for the map module"
+  "react-map-gl": "React wrapper for Mapbox GL JS"
+  "@types/mapbox-gl": "TypeScript definitions for mapbox-gl"
+  "framer-motion": "Smooth animations for drawers and route transitions"
+  "date-fns": "For formatting dates in the callout lists"
+  "clsx": "Utility for constructing className strings conditionally"
+  "tailwind-merge": "Utility to safely merge Tailwind classes"
+
+images: []
+
+notes:
+  - Expects VITE_MAPBOX_TOKEN in environment variables for map rendering. If absent, a fallback placeholder will render.
+  - Using mocked data as fallback if generated API endpoints fail or return empty arrays.
