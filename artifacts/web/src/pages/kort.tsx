@@ -3,10 +3,11 @@ import Map, { Source, Layer, Marker, NavigationControl, Popup } from "react-map-
 import type { MapLayerMouseEvent, FillLayer, LineLayer, CircleLayer } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { useQuery } from "@tanstack/react-query";
-import { Filter, MapPin, Map as MapIcon, CheckCircle2, ChevronDown, ChevronUp } from "lucide-react";
+import { Filter, MapPin, Map as MapIcon, CheckCircle2, ChevronDown, ChevronUp, AlertTriangle } from "lucide-react";
 import { clsx } from "clsx";
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
+console.log("[VinterDrift/kort] VITE_MAPBOX_TOKEN present:", !!MAPBOX_TOKEN, MAPBOX_TOKEN?.slice(0, 8));
 const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
 
 const LEVEL_LABEL: Record<string, string> = { vip: "VIP", hoj: "HØJ", lav: "LAV", basis: "BASIS" };
@@ -45,6 +46,7 @@ export default function KortPage() {
   const [showGeo, setShowGeo] = useState(true);
   const [showAreas, setShowAreas] = useState(true);
   const [geoExpanded, setGeoExpanded] = useState(false);
+  const [mapError, setMapError] = useState<string | null>(null);
 
   const params = new URLSearchParams();
   if (selectedArea) params.set("areaId", selectedArea);
@@ -318,12 +320,15 @@ export default function KortPage() {
               )
             }
           />
+        ) : mapError ? (
+          <WebGLError message={mapError} />
         ) : (
           <Map
             initialViewState={{ longitude: 9.5, latitude: 56.3, zoom: 7 }}
             mapStyle="mapbox://styles/mapbox/light-v11"
             mapboxAccessToken={MAPBOX_TOKEN}
             style={{ width: "100%", height: "100%" }}
+            onError={e => { console.error("[VinterDrift/kort] Map error:", e.error); setMapError(e.error?.message ?? "Kortfejl"); }}
           >
             <NavigationControl position="bottom-right" />
 
@@ -401,6 +406,26 @@ export default function KortPage() {
             )}
           </Map>
         )}
+      </div>
+    </div>
+  );
+}
+
+function WebGLError({ message }: { message: string }) {
+  return (
+    <div className="flex-1 h-full flex flex-col items-center justify-center bg-slate-100 dark:bg-slate-900 border-l border-border">
+      <div className="flex flex-col items-center max-w-sm text-center p-8 bg-background/90 backdrop-blur rounded-2xl shadow-xl border border-orange-200 dark:border-orange-800">
+        <div className="w-14 h-14 bg-orange-100 dark:bg-orange-900/30 text-orange-600 rounded-2xl flex items-center justify-center mb-4">
+          <AlertTriangle className="w-7 h-7" />
+        </div>
+        <h2 className="text-xl font-display font-bold mb-2">WebGL ikke tilgængeligt</h2>
+        <p className="text-sm text-muted-foreground mb-2">
+          Kortvisningen kræver WebGL-understøttelse i browseren.
+          Prøv en anden browser eller opdater din grafik-driver.
+        </p>
+        <code className="text-xs text-orange-700 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 px-2 py-1 rounded">
+          {message}
+        </code>
       </div>
     </div>
   );

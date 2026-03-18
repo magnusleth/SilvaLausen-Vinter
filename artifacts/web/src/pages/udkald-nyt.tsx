@@ -6,11 +6,12 @@ import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Siren, Info, Send, Map as MapIcon, CheckCircle2, ChevronDown, ChevronUp } from "lucide-react";
+import { ArrowLeft, Siren, Info, Send, Map as MapIcon, CheckCircle2, ChevronDown, ChevronUp, AlertTriangle } from "lucide-react";
 import { clsx } from "clsx";
 import { useToast } from "@/hooks/use-toast";
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
+console.log("[VinterDrift/udkald-nyt] VITE_MAPBOX_TOKEN present:", !!MAPBOX_TOKEN, MAPBOX_TOKEN?.slice(0, 8));
 const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
 
 const COLOR_DEF = [
@@ -57,6 +58,7 @@ export default function NytUdkaldPage() {
   const [popup, setPopup] = useState<AreaPopup | null>(null);
   const [saving, setSaving] = useState(false);
   const [previewExpanded, setPreviewExpanded] = useState(false);
+  const [mapError, setMapError] = useState<string | null>(null);
 
   const { data: areas = [], isLoading } = useQuery<AreaWithGeo[]>({
     queryKey: ["areas-with-geometry"],
@@ -406,6 +408,8 @@ export default function NytUdkaldPage() {
               areaColors={areaColors}
               onSelectColor={handleSelectColor}
             />
+          ) : mapError ? (
+            <WebGLError message={mapError} />
           ) : (
             <Map
               initialViewState={{ longitude: 9.5, latitude: 56.3, zoom: 7 }}
@@ -415,6 +419,7 @@ export default function NytUdkaldPage() {
               interactiveLayerIds={["areas-fill"]}
               onClick={handleMapClick}
               cursor="pointer"
+              onError={e => { console.error("[VinterDrift/udkald-nyt] Map error:", e.error); setMapError(e.error?.message ?? "Kortfejl"); }}
             >
               <NavigationControl position="bottom-right" />
 
@@ -498,6 +503,23 @@ export default function NytUdkaldPage() {
             </Map>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function WebGLError({ message }: { message: string }) {
+  return (
+    <div className="w-full h-full flex items-center justify-center bg-slate-100 dark:bg-slate-900">
+      <div className="text-center p-8 max-w-sm bg-background/90 backdrop-blur rounded-2xl shadow-xl border border-orange-200 dark:border-orange-800">
+        <AlertTriangle className="w-10 h-10 text-orange-500 mx-auto mb-3" />
+        <h3 className="font-bold text-base mb-1">WebGL ikke tilgængeligt</h3>
+        <p className="text-sm text-muted-foreground mb-2">
+          Kortvisningen kræver WebGL-understøttelse. Prøv en anden browser.
+        </p>
+        <code className="text-xs text-orange-700 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 px-2 py-1 rounded block">
+          {message}
+        </code>
       </div>
     </div>
   );
