@@ -273,16 +273,13 @@ export default function UdkaldVisPage() {
               {/* Site totals summary */}
               {totalSites > 0 && (
                 <div className="bg-primary/5 border border-primary/20 rounded-xl px-4 py-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-primary">
-                      Pladser i udkald
-                    </span>
-                    <span className="text-xl font-bold text-primary">{totalSites}</span>
-                  </div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-primary mb-2">
+                    Pladser i udkald
+                  </p>
                   {activeAreas.length > 0 && (
-                    <div className="mt-2 space-y-0.5">
-                      {activeAreas.map(a => (
-                        a.siteCount > 0 && (
+                    <div className="space-y-0.5">
+                      {activeAreas.map(a =>
+                        a.siteCount > 0 ? (
                           <div key={a.id} className="flex items-center justify-between text-xs">
                             <div className="flex items-center gap-1.5">
                               <span className="w-2 h-2 rounded-full" style={{ backgroundColor: colorHex(a.color) }} />
@@ -290,10 +287,15 @@ export default function UdkaldVisPage() {
                             </div>
                             <span className="font-semibold text-foreground">{a.siteCount}</span>
                           </div>
-                        )
-                      ))}
+                        ) : null
+                      )}
                     </div>
                   )}
+                  {/* I alt */}
+                  <div className="flex items-center justify-between text-xs mt-2 pt-2 border-t border-primary/20">
+                    <span className="font-bold text-primary">I alt</span>
+                    <span className="font-bold text-primary text-base">{totalSites}</span>
+                  </div>
                 </div>
               )}
 
@@ -437,11 +439,10 @@ function NoMapFallback({ data }: { data: CalloutMapData }) {
           Tilføj <code className="bg-muted px-1 rounded text-xs">VITE_MAPBOX_TOKEN</code> for at se kortet.
         </p>
         {data.totalSites > 0 && (
-          <div className="bg-card rounded-xl border p-4 text-left space-y-2">
+          <div className="bg-card rounded-xl border p-4 text-left space-y-2 min-w-[220px]">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
               Inkluderede pladser
             </p>
-            <p className="text-2xl font-bold">{data.totalSites}</p>
             <div className="space-y-1.5">
               {activeAreas.map(area => (
                 <div key={area.id} className="flex items-center justify-between text-xs">
@@ -449,9 +450,13 @@ function NoMapFallback({ data }: { data: CalloutMapData }) {
                     <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: colorHex(area.color) }} />
                     <span>{area.name}</span>
                   </div>
-                  <span className="font-bold">{area.siteCount}</span>
+                  <span className="font-semibold">{area.siteCount}</span>
                 </div>
               ))}
+            </div>
+            <div className="flex items-center justify-between pt-2 border-t">
+              <span className="text-sm font-bold">I alt</span>
+              <span className="text-lg font-bold">{data.totalSites}</span>
             </div>
           </div>
         )}

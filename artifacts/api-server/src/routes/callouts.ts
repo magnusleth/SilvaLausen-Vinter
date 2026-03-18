@@ -101,7 +101,7 @@ router.post("/callouts", async (req, res): Promise<void> => {
     }
   }
 
-  res.status(201).json({ ...callout, totalSitesSaved });
+  res.status(201).json({ ...callout, totalSites: totalSitesSaved });
 });
 
 router.get("/callouts/:id", async (req, res): Promise<void> => {
