@@ -1,9 +1,12 @@
-import React, { useState, useMemo, useCallback } from "react";
-import Map, { Source, Layer, Marker, NavigationControl, Popup } from "react-map-gl/mapbox";
-import type { MapLayerMouseEvent, FillLayer, LineLayer, CircleLayer } from "react-map-gl/mapbox";
+import React, { useState, useMemo, useCallback, useRef } from "react";
+import Map, { Source, Layer, NavigationControl, Popup, MapRef } from "react-map-gl/mapbox";
+import type { MapLayerMouseEvent, FillLayer, LineLayer, CircleLayer, SymbolLayer } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { useQuery } from "@tanstack/react-query";
-import { Filter, MapPin, Map as MapIcon, CheckCircle2, ChevronDown, ChevronUp, AlertTriangle } from "lucide-react";
+import {
+  Filter, Map as MapIcon, CheckCircle2,
+  ChevronDown, ChevronUp, AlertTriangle,
+} from "lucide-react";
 import { clsx } from "clsx";
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
@@ -38,15 +41,22 @@ interface Area {
   geometry: { geometry: { type: string; coordinates: number[][][] } } | null;
 }
 
+type PopupState =
+  | { type: "site"; site: SiteMarker; lng: number; lat: number }
+  | { type: "cluster"; sites: SiteMarker[]; lng: number; lat: number };
+
 export default function KortPage() {
+  const mapRef = useRef<MapRef>(null);
+
   const [selectedLevels, setSelectedLevels] = useState<Set<string>>(new Set());
   const [selectedArea, setSelectedArea] = useState<string | null>(null);
   const [showInactive, setShowInactive] = useState(false);
-  const [popupInfo, setPopupInfo] = useState<SiteMarker | null>(null);
+  const [popupState, setPopupState] = useState<PopupState | null>(null);
   const [showGeo, setShowGeo] = useState(true);
   const [showAreas, setShowAreas] = useState(true);
   const [geoExpanded, setGeoExpanded] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
+  const [cursor, setCursor] = useState("grab");
 
   const params = new URLSearchParams();
   if (selectedArea) params.set("areaId", selectedArea);
@@ -85,11 +95,30 @@ export default function KortPage() {
     enabled: showAreas,
   });
 
-  // Filter sites client-side for multi-level selection
   const filteredSites = useMemo(() => {
     if (selectedLevels.size === 0 || selectedLevels.size === 4) return sites;
     return sites.filter(s => selectedLevels.has(s.level));
   }, [sites, selectedLevels]);
+
+  // GeoJSON for native Mapbox clustering
+  const sitesGeoJson = useMemo((): GeoJSON.FeatureCollection => ({
+    type: "FeatureCollection",
+    features: filteredSites.map(s => ({
+      type: "Feature" as const,
+      geometry: { type: "Point" as const, coordinates: [s.lng, s.lat] },
+      properties: {
+        id: s.id,
+        name: s.name,
+        address: s.address ?? null,
+        level: s.level,
+        dayRule: s.dayRule,
+        active: s.active,
+        areaId: s.areaId,
+        lat: s.lat,
+        lng: s.lng,
+      },
+    })),
+  }), [filteredSites]);
 
   // Area polygons GeoJSON
   const areasGeoJson = useMemo((): GeoJSON.FeatureCollection => ({
@@ -102,6 +131,8 @@ export default function KortPage() {
         geometry: a.geometry!.geometry as GeoJSON.Polygon,
       })),
   }), [areasWithGeo]);
+
+  // ── Layer definitions ───────────────────────────────────────────────────────
 
   const areaFillLayer: FillLayer = {
     id: "areas-fill",
@@ -116,7 +147,6 @@ export default function KortPage() {
     paint: { "line-color": "#3b82f6", "line-width": 1.5, "line-opacity": 0.5 },
   };
 
-  // Site geometry layers
   const geoLineLayer: LineLayer = {
     id: "site-geo-lines",
     type: "line",
@@ -125,10 +155,7 @@ export default function KortPage() {
     paint: {
       "line-color": [
         "match", ["get", "level"],
-        "vip", "#f97316",
-        "hoj", "#3b82f6",
-        "lav", "#ef4444",
-        "#22c55e"
+        "vip", "#f97316", "hoj", "#3b82f6", "lav", "#ef4444", "#22c55e",
       ],
       "line-width": 2.5,
       "line-opacity": 0.75,
@@ -142,14 +169,130 @@ export default function KortPage() {
     paint: {
       "fill-color": [
         "match", ["get", "level"],
-        "vip", "#f97316",
-        "hoj", "#3b82f6",
-        "lav", "#ef4444",
-        "#22c55e"
+        "vip", "#f97316", "hoj", "#3b82f6", "lav", "#ef4444", "#22c55e",
       ],
       "fill-opacity": 0.3,
     },
   };
+
+  // Cluster circles — size scales with count
+  const clusterCircleLayer: CircleLayer = {
+    id: "clusters",
+    type: "circle",
+    source: "sites",
+    filter: ["has", "point_count"],
+    paint: {
+      "circle-color": [
+        "step", ["get", "point_count"],
+        "#64748b", 10, "#475569", 30, "#334155",
+      ],
+      "circle-radius": [
+        "step", ["get", "point_count"],
+        16, 10, 20, 30, 24,
+      ],
+      "circle-stroke-width": 2.5,
+      "circle-stroke-color": "#ffffff",
+      "circle-opacity": 0.9,
+    },
+  };
+
+  // Cluster count label
+  const clusterCountLayer: SymbolLayer = {
+    id: "cluster-count",
+    type: "symbol",
+    source: "sites",
+    filter: ["has", "point_count"],
+    layout: {
+      "text-field": "{point_count_abbreviated}",
+      "text-font": ["DIN Offc Pro Medium", "Arial Unicode MS Bold"],
+      "text-size": 13,
+      "text-allow-overlap": true,
+    },
+    paint: { "text-color": "#ffffff" },
+  };
+
+  // Individual (unclustered) site markers
+  const unclusteredPointLayer: CircleLayer = {
+    id: "unclustered-point",
+    type: "circle",
+    source: "sites",
+    filter: ["!", ["has", "point_count"]],
+    paint: {
+      "circle-color": [
+        "match", ["get", "level"],
+        "vip", "#f97316",
+        "hoj", "#3b82f6",
+        "lav", "#ef4444",
+        "#22c55e",
+      ],
+      "circle-radius": 8,
+      "circle-stroke-width": 2.5,
+      "circle-stroke-color": "#ffffff",
+      "circle-opacity": 0.95,
+    },
+  };
+
+  // ── Interaction handlers ────────────────────────────────────────────────────
+
+  const handleMapClick = useCallback((e: MapLayerMouseEvent) => {
+    const features = e.features;
+    if (!features?.length) {
+      setPopupState(null);
+      return;
+    }
+
+    const feature = features[0];
+    const coords = (feature.geometry as GeoJSON.Point).coordinates as [number, number];
+    const [lng, lat] = coords;
+
+    if (feature.properties?.cluster) {
+      // It's a cluster bubble — try to expand it
+      const clusterId = feature.properties.cluster_id as number;
+      const mapInstance = mapRef.current?.getMap();
+      if (!mapInstance) return;
+      const source = mapInstance.getSource("sites") as any;
+      if (!source) return;
+
+      source.getClusterExpansionZoom(clusterId, (err: unknown, zoom: number) => {
+        if (err) return;
+        if (zoom > 17) {
+          // Points overlap so tightly they won't split — show list popup
+          source.getClusterLeaves(clusterId, 100, 0, (err2: unknown, leaves: GeoJSON.Feature[]) => {
+            if (err2 || !leaves) return;
+            const clusterSites = leaves
+              .map(f => f.properties as SiteMarker)
+              .filter(Boolean)
+              .sort((a, b) => {
+                const order: Record<string, number> = { vip: 0, hoj: 1, lav: 2, basis: 3 };
+                return (order[a.level] ?? 4) - (order[b.level] ?? 4);
+              });
+            setPopupState({ type: "cluster", sites: clusterSites, lng, lat });
+          });
+        } else {
+          setPopupState(null);
+          mapInstance.easeTo({ center: [lng, lat], zoom, duration: 400 });
+        }
+      });
+    } else {
+      // Single unclustered point
+      const p = feature.properties as Record<string, unknown>;
+      const site: SiteMarker = {
+        id: String(p.id ?? ""),
+        name: String(p.name ?? ""),
+        address: p.address != null ? String(p.address) : null,
+        level: String(p.level ?? "basis"),
+        dayRule: String(p.dayRule ?? "altid"),
+        active: Boolean(p.active),
+        areaId: String(p.areaId ?? ""),
+        lat: Number(p.lat ?? lat),
+        lng: Number(p.lng ?? lng),
+      };
+      setPopupState({ type: "site", site, lng, lat });
+    }
+  }, []);
+
+  const handleMouseEnter = useCallback(() => setCursor("pointer"), []);
+  const handleMouseLeave = useCallback(() => setCursor("grab"), []);
 
   const toggleLevel = (lvl: string) => {
     setSelectedLevels(prev => {
@@ -324,11 +467,20 @@ export default function KortPage() {
           <WebGLError message={mapError} />
         ) : (
           <Map
+            ref={mapRef}
             initialViewState={{ longitude: 9.5, latitude: 56.3, zoom: 7 }}
             mapStyle="mapbox://styles/mapbox/light-v11"
             mapboxAccessToken={MAPBOX_TOKEN}
             style={{ width: "100%", height: "100%" }}
-            onError={e => { console.error("[VinterDrift/kort] Map error:", e.error); setMapError(e.error?.message ?? "Kortfejl"); }}
+            cursor={cursor}
+            interactiveLayerIds={["clusters", "unclustered-point"]}
+            onClick={handleMapClick}
+            onMouseEnter={handleMouseEnter}
+            onMouseLeave={handleMouseLeave}
+            onError={e => {
+              console.error("[VinterDrift/kort] Map error:", e.error);
+              setMapError(e.error?.message ?? "Kortfejl");
+            }}
           >
             <NavigationControl position="bottom-right" />
 
@@ -340,7 +492,7 @@ export default function KortPage() {
               </Source>
             )}
 
-            {/* Site geometries */}
+            {/* Site geometries (lines/polygons) */}
             {showGeo && siteGeo && (
               <Source id="site-geo" type="geojson" data={siteGeo}>
                 <Layer {...geoFillLayer} />
@@ -348,31 +500,27 @@ export default function KortPage() {
               </Source>
             )}
 
-            {/* Site markers */}
-            {filteredSites.map(site => (
-              <Marker
-                key={site.id}
-                longitude={site.lng}
-                latitude={site.lat}
-                onClick={e => {
-                  e.originalEvent.stopPropagation();
-                  setPopupInfo(site);
-                }}
-              >
-                <div
-                  className="w-5 h-5 rounded-full border-2 border-white shadow-md cursor-pointer hover:scale-125 transition-transform"
-                  style={{ backgroundColor: LEVEL_HEX[site.level] ?? "#94a3b8" }}
-                />
-              </Marker>
-            ))}
+            {/* Clustered site markers */}
+            <Source
+              id="sites"
+              type="geojson"
+              data={sitesGeoJson}
+              cluster={true}
+              clusterMaxZoom={17}
+              clusterRadius={40}
+            >
+              <Layer {...clusterCircleLayer} />
+              <Layer {...clusterCountLayer} />
+              <Layer {...unclusteredPointLayer} />
+            </Source>
 
-            {/* Popup */}
-            {popupInfo && (
+            {/* Popup — single site */}
+            {popupState?.type === "site" && (
               <Popup
                 anchor="bottom"
-                longitude={popupInfo.lng}
-                latitude={popupInfo.lat}
-                onClose={() => setPopupInfo(null)}
+                longitude={popupState.lng}
+                latitude={popupState.lat}
+                onClose={() => setPopupState(null)}
                 closeButton
                 closeOnClick={false}
                 offset={12}
@@ -382,24 +530,63 @@ export default function KortPage() {
                   <div className="flex items-center gap-1.5 mb-1">
                     <div
                       className="w-2.5 h-2.5 rounded-full shrink-0"
-                      style={{ backgroundColor: LEVEL_HEX[popupInfo.level] }}
+                      style={{ backgroundColor: LEVEL_HEX[popupState.site.level] }}
                     />
-                    <span className="font-bold text-sm">{LEVEL_LABEL[popupInfo.level]}</span>
+                    <span className="font-bold text-sm">{LEVEL_LABEL[popupState.site.level]}</span>
                   </div>
-                  <h3 className="font-semibold text-sm leading-tight mb-1">{popupInfo.name}</h3>
-                  {popupInfo.address && (
-                    <p className="text-xs text-muted-foreground mb-1.5">{popupInfo.address}</p>
+                  <h3 className="font-semibold text-sm leading-tight mb-1">{popupState.site.name}</h3>
+                  {popupState.site.address && (
+                    <p className="text-xs text-muted-foreground mb-1.5">{popupState.site.address}</p>
                   )}
                   <div className="flex items-center gap-1 flex-wrap">
                     <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-muted">
-                      {popupInfo.dayRule === "altid" ? "Alle dage" : "Kun hverdage"}
+                      {popupState.site.dayRule === "altid" ? "Alle dage" : "Kun hverdage"}
                     </span>
                     <span className={clsx(
                       "px-1.5 py-0.5 rounded text-[10px] font-semibold",
-                      popupInfo.active ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+                      popupState.site.active ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
                     )}>
-                      {popupInfo.active ? "Aktiv" : "Inaktiv"}
+                      {popupState.site.active ? "Aktiv" : "Inaktiv"}
                     </span>
+                  </div>
+                </div>
+              </Popup>
+            )}
+
+            {/* Popup — overlapping cluster (same coordinates) */}
+            {popupState?.type === "cluster" && (
+              <Popup
+                anchor="bottom"
+                longitude={popupState.lng}
+                latitude={popupState.lat}
+                onClose={() => setPopupState(null)}
+                closeButton
+                closeOnClick={false}
+                offset={12}
+                maxWidth="280px"
+              >
+                <div className="p-2 min-w-[220px]">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                      {popupState.sites.length} pladser samme placering
+                    </span>
+                  </div>
+                  <div className="space-y-1.5 max-h-56 overflow-y-auto">
+                    {popupState.sites.map(s => (
+                      <div
+                        key={s.id}
+                        className="flex items-start gap-2 p-1.5 rounded-lg bg-muted/40 hover:bg-muted transition-colors"
+                      >
+                        <div
+                          className="w-2.5 h-2.5 rounded-full shrink-0 mt-0.5"
+                          style={{ backgroundColor: LEVEL_HEX[s.level] ?? "#94a3b8" }}
+                        />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium leading-tight truncate">{s.name}</p>
+                          <p className="text-[10px] text-muted-foreground">{LEVEL_LABEL[s.level]}</p>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               </Popup>
